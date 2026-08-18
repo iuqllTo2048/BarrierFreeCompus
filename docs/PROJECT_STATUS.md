@@ -2,42 +2,60 @@
 
 ## 当前阶段
 
-- 当前 Stage：Design Gate（视觉确认）
-- 状态：已完成，待人工验收
-- 下一关卡：Stage 1（基础工程）
+- 当前版本：v0.1.0
+- 当前 Stage：Stage 1（基础工程与一键启动）
+- 状态：开发与自动验收已完成，等待人工验收
+- 下一阶段：Stage 2（地图与基础数据），未开始
 
-## 已完成
+## Stage 1 已实现
 
-- 已确认项目冻结规格、阶段 Prompt 与设计方向文档。
-- 已初始化 Git 仓库与基础目录：`backend/`、`frontend/`、`infra/`、`docs/`、`.agents/skills/`、`prompts/stages/`。
-- 已建立忽略规则与外部配置样例；未保存任何真实密钥。
-- 已保留项目复盘 Skill，未创建 Spring Boot 或 Vue 业务代码。
-- 已在 `.agents/skills/ui-ux-pro-max/` 安装 UI UX Pro Max 2.15.0；其 `SKILL.md`、67 个脚本/数据文件可读取，并已通过 Windows `py` 调用本地查询脚本。
-- 已确认方案 A“静谧导览”：系统字体、轻量顶栏、标准信息密度与克制动效；设计细节冻结在 `docs/DESIGN_SYSTEM.md`。
-- 已创建项目专属 `barrier-free-ui` Skill，后续界面工作必须遵循已确认的设计方向与设计系统。
+- 后端：Spring Boot 3.5.14、Java 21、统一响应/异常、Spring Security、JWT Access Token、Refresh Token 轮换、USER/ADMIN 权限、Swagger、健康检查及审计日志框架。
+- 数据库：PostgreSQL 17 + PostGIS 3.5、Flyway 迁移、用户/刷新令牌/审计表。
+- 前端：Vue 3 + TypeScript + Vite、Pinia、Router、Axios、Element Plus、登录态恢复、401 自动刷新、角色路由、中文 USER/ADMIN 界面骨架。
+- 部署：根目录 Docker Compose、后端容器、PostGIS 容器、Nginx 前端与同源 API 代理。
+- UI：遵循“静谧导览”设计系统，提供系统字体、深青绿语义色、可见焦点、响应式布局、深色模式及非颜色路线图例。
 
-## 环境记录
+## 已解决问题
 
-| 工具 | 检测结果 | 备注 |
-|---|---|---|
-| Git | 2.52.0 | 可用 |
-| Java | 21.0.9 LTS | 可用 |
-| Maven | 3.9.12 | 可用 |
-| Node.js | 26.3.0 | 可用，但不是常规 LTS 线 |
-| npm | 11.16.0 | 可用 |
-| Docker | 29.1.5 | 可用 |
-| Docker Compose | 5.0.1 | 可用 |
-| Python | `py` 3.13.0 | `python` 命令不可用，后续使用 `py` |
+- 原演示账号种子使用了无法匹配约定密码的 BCrypt 值，现通过只追加的 Flyway V2 迁移修复。
+- 原 JWT 过滤器未执行验签，现已完成 Bearer Token 解析与角色注入。
+- 原认证异常经受保护的 `/error` 二次转发后表现为空白 403，现统一返回真实 HTTP 状态和中文 JSON 错误。
+- 刷新令牌由逐条 BCrypt 扫描改为 SHA-256 摘要精确索引，并实现单次轮换与服务端注销。
+- 前端原登录按钮仅显示占位提示，现已接入真实登录、恢复、退出和权限跳转。
 
-## Skill 记录
+## 自动验收结果
 
-| Skill | 状态 | 说明 |
-|---|---|---|
-| `barrier-free-project-recap` | 已保留 | 仅基于真实代码进行项目复盘 |
-| `ui-ux-pro-max` | 已安装 | 版本 2.15.0，项目级 universal 安装；后续界面工作使用 `py` 执行本地脚本 |
-| `barrier-free-ui` | 已创建 | 项目专属 UI 设计约束；只在 BarrierFreeCampus 的界面工作中使用 |
+| 项目 | 结果 |
+|---|---|
+| 后端 `mvn test` | 通过，3 个测试 |
+| 前端 ESLint | 通过，0 错误/0 警告 |
+| 前端 TypeScript | 通过 |
+| 前端 Vitest | 通过，1 个测试 |
+| 前端生产构建 | 通过，已按页面拆包 |
+| Docker Compose 构建/启动 | 通过，3 个容器运行 |
+| Flyway | V1、V2 均成功，当前 schema v2 |
+| 健康检查 | `UP` |
+| USER 登录及用户接口 | 通过 |
+| USER 访问 ADMIN 接口 | 正确返回 403 JSON |
+| ADMIN 登录及管理接口 | 通过 |
+| 错误密码 | 正确返回 401 JSON |
+| Refresh Token 轮换/旧令牌失效/注销 | 通过 |
+| Swagger 入口 | 302 正常跳转至 Swagger UI |
 
-## 未开始
+## 演示账号
 
-- Stage 1 至 Stage 9。
-- 后端、前端、数据库、地图、寻路、用户业务和 AI 功能。
+仅用于本地 Stage 1 验收：
+
+- 用户：`demo_user` / `Demo@12345`
+- 管理员：`demo_admin` / `Admin@12345`
+
+## 已知限制
+
+- 尚未实现地图、路网、A*、设施、事件、审核、统计和 AI；界面明确标识为后续 Stage 内容，不包含伪造业务数据。
+- 本地 Compose 使用 HTTP，因此 `SECURE_COOKIE=false`；生产 HTTPS 必须设为 `true`。
+- Node 26 非常规 LTS 的兼容性风险继续保留；Docker 前端构建固定使用 Node 22 Alpine。
+- 本轮浏览器控制运行时在本机未能建立自动化连接，因此交互已通过真实 HTTP/API、构建和页面资源验证，最终视觉仍列入人工验收步骤。
+
+## 下一步
+
+等待用户验收 Stage 1；验收后创建中文 Git 提交，再根据明确的“继续”进入 Stage 2。
