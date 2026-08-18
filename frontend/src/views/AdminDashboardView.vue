@@ -594,7 +594,10 @@ onMounted(() => mapData.load(true));
                 <el-option label="启用" value="ACTIVE" /><el-option
                   label="停用"
                   value="INACTIVE"
-                /><el-option label="封闭" value="CLOSED" />
+                /><el-option label="封闭" value="CLOSED" /><el-option
+                  label="动态阻断"
+                  value="BLOCKED"
+                />
               </el-select> </el-form-item
             ><el-form-item label="双向">
               <el-switch v-model="edgeForm.bidirectional" />

@@ -201,6 +201,269 @@ h2 {
   display: grid;
   grid-template-columns: 340px minmax(0, 1fr);
 }
+.route-planning-layout {
+  min-height: calc(100vh - 65px);
+  display: grid;
+  grid-template-columns: 340px minmax(420px, 1fr) 350px;
+}
+.route-control-panel,
+.route-results-panel {
+  max-height: calc(100vh - 65px);
+  overflow-y: auto;
+}
+.route-control-panel .el-select {
+  width: 100%;
+}
+.endpoint-field,
+.results-heading,
+.route-card-heading,
+.route-metrics {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+.endpoint-field {
+  align-items: end;
+}
+.endpoint-field .field-label {
+  margin-bottom: 8px;
+}
+.endpoint-field .el-button {
+  margin-bottom: 2px;
+}
+.swap-button,
+.plan-button {
+  width: 100%;
+  margin-top: 10px;
+}
+.plan-button {
+  min-height: 44px;
+  margin-top: 16px;
+}
+.two-column-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.preference-panel,
+.cost-details {
+  margin-top: 20px;
+  padding: 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.preference-panel summary,
+.cost-details summary {
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 700;
+}
+.preference-panel[open] summary,
+.cost-details[open] summary {
+  margin-bottom: 14px;
+}
+.preference-panel > label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.preference-switch {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 40px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.coordinate-note {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+.route-results-panel {
+  padding: 24px 20px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.results-heading h2 {
+  margin-bottom: 0;
+}
+.route-notices {
+  margin: 16px 0;
+  padding: 10px 12px;
+  color: #76510b;
+  background: #fff4d6;
+  border-left: 3px solid #d99512;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+.route-notices p {
+  margin: 0;
+}
+.route-notices p + p {
+  margin-top: 4px;
+}
+.route-card-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.route-card {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  padding: 14px;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.route-card.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgb(15 118 110 / 16%);
+}
+.route-card-heading > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+.route-swatch,
+.legend-route {
+  display: inline-block;
+  width: 28px;
+  border-top: 4px solid;
+}
+.profile-shortest .route-swatch,
+.legend-route.shortest {
+  border-color: #667085;
+  border-top-style: dashed;
+}
+.profile-accessible .route-swatch,
+.legend-route.accessible {
+  border-color: var(--primary);
+  border-top-width: 6px;
+}
+.profile-balanced .route-swatch,
+.legend-route.balanced {
+  border-color: var(--secondary);
+}
+.risk-chip {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.risk-low {
+  color: #16603f;
+  background: #ddf3e7;
+}
+.risk-medium {
+  color: #8a5700;
+  background: #fff0c2;
+}
+.risk-high {
+  color: #8f2c24;
+  background: #fbe0dd;
+}
+.risk-unknown {
+  color: #525f5b;
+  background: #e9eeec;
+}
+.equivalent-note {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.route-metrics {
+  justify-content: start;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.route-details {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.route-details h3 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+}
+.warning-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 10px 10px 28px;
+  color: #8f2c24;
+  background: #fff0ee;
+  border: 1px solid #efb5b0;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.safe-note {
+  color: #16603f;
+  font-size: 0.78rem;
+}
+.route-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin: 12px 0 0;
+}
+.route-detail-grid div {
+  padding: 10px;
+  background: var(--surface-soft);
+  border-radius: 8px;
+}
+.route-detail-grid dt,
+.cost-details dt {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+.route-detail-grid dd,
+.cost-details dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cost-details dl {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+.results-empty {
+  min-height: 360px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  color: var(--text-muted);
+  text-align: center;
+}
+.results-empty p {
+  max-width: 270px;
+  line-height: 1.7;
+}
+.empty-route-symbol {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  color: var(--primary);
+  background: var(--surface-soft);
+  border: 1px dashed var(--primary);
+  border-radius: 50%;
+  font-weight: 700;
+}
 .route-panel {
   padding: 32px 24px;
   background: var(--surface);
@@ -662,6 +925,30 @@ h2 {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(430px, 58vh) auto;
   }
+  .route-planning-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(480px, 60vh) auto auto;
+  }
+  .route-planning-layout .campus-map-shell {
+    grid-row: 1;
+    min-height: 480px;
+  }
+  .route-control-panel,
+  .route-results-panel {
+    max-height: none;
+  }
+  .route-control-panel {
+    grid-row: 2;
+    margin-top: -12px;
+    border: 0;
+    border-radius: 12px 12px 0 0;
+    z-index: 1;
+  }
+  .route-results-panel {
+    grid-row: 3;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
   .user-map-layout {
     grid-template-rows: minmax(480px, 60vh) auto;
   }
@@ -803,5 +1090,30 @@ h2 {
   .interaction-hint {
     color: #bde3db;
     background: #193a34;
+  }
+  .route-notices {
+    color: #f3d28d;
+    background: #453614;
+  }
+  .warning-list {
+    color: #ffb4ad;
+    background: #472421;
+    border-color: #7a3c36;
+  }
+  .risk-low {
+    color: #a9e2c2;
+    background: #173d2c;
+  }
+  .risk-medium {
+    color: #f3d28d;
+    background: #453614;
+  }
+  .risk-high {
+    color: #ffb4ad;
+    background: #472421;
+  }
+  .risk-unknown {
+    color: #c2cfcb;
+    background: #293936;
   }
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AMapLoader from '@amap/amap-jsapi-loader';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { Coordinate, GeoJsonGeometry, MapSnapshot } from '../types/map';
+import type { Coordinate, GeoJsonGeometry, MapSnapshot, RouteResult } from '../types/map';
 
 interface LngLatValue {
   getLng(): number;
@@ -43,8 +43,19 @@ const props = withDefaults(
     snapshot: MapSnapshot | null;
     editable?: boolean;
     selectedId?: string | null;
+    routes?: RouteResult[];
+    selectedRouteIndex?: number;
+    startNodeId?: string | null;
+    endNodeId?: string | null;
   }>(),
-  { editable: false, selectedId: null },
+  {
+    editable: false,
+    selectedId: null,
+    routes: () => [],
+    selectedRouteIndex: 0,
+    startNodeId: null,
+    endNodeId: null,
+  },
 );
 
 const emit = defineEmits<{
@@ -125,6 +136,24 @@ function renderSnapshot(): void {
     addSelectable(overlay, 'edge', edge.id);
   }
 
+  const amap = api;
+  props.routes.forEach((route, index) => {
+    const active = index === props.selectedRouteIndex;
+    const style = routeStyle(route.profile);
+    const overlay = new amap.Polyline({
+      path: coordinates(route.geometry),
+      strokeColor: style.color,
+      strokeWeight: active ? style.weight + 2 : style.weight,
+      strokeOpacity: active ? 0.96 : 0.58,
+      strokeStyle: style.dashed ? 'dashed' : 'solid',
+      lineJoin: 'round',
+      lineCap: 'round',
+      title: `${profileLabel(route.profile)} · ${route.distanceM} 米 · ${route.riskSummary.level} 风险`,
+      zIndex: active ? 170 : 150 + index,
+    });
+    overlays.push(overlay);
+  });
+
   for (const node of props.snapshot.nodes) {
     const selected = props.selectedId === node.id;
     const overlay = new api.CircleMarker({
@@ -163,8 +192,40 @@ function renderSnapshot(): void {
     addSelectable(overlay, 'barrier', barrier.id);
   }
 
+  for (const endpoint of [
+    { id: props.startNodeId, text: '起', className: 'start-symbol', label: '路线起点' },
+    { id: props.endNodeId, text: '终', className: 'end-symbol', label: '路线终点' },
+  ]) {
+    const node = props.snapshot.nodes.find((item) => item.id === endpoint.id);
+    if (!node) continue;
+    const overlay = new api.Marker({
+      position: [node.lng, node.lat],
+      content: markerContent(endpoint.text, endpoint.className, endpoint.label),
+      offset: new api.Pixel(-16, -16),
+      title: `${endpoint.label}：${node.name ?? node.externalId}`,
+      zIndex: 190,
+    });
+    overlays.push(overlay);
+  }
+
   map.add(overlays);
   if (overlays.length) map.setFitView(overlays, false, [48, 48, 48, 48]);
+}
+
+function routeStyle(profile: RouteResult['profile']): {
+  color: string;
+  weight: number;
+  dashed: boolean;
+} {
+  if (profile === 'ACCESSIBLE') return { color: '#0f766e', weight: 6, dashed: false };
+  if (profile === 'BALANCED') return { color: '#176b82', weight: 4, dashed: false };
+  return { color: '#667085', weight: 4, dashed: true };
+}
+
+function profileLabel(profile: RouteResult['profile']): string {
+  if (profile === 'ACCESSIBLE') return '无障碍优先';
+  if (profile === 'BALANCED') return '综合路线';
+  return '最短路线';
 }
 
 async function initialize(): Promise<void> {
@@ -204,7 +265,15 @@ async function initialize(): Promise<void> {
 }
 
 watch(
-  () => [props.snapshot, props.selectedId] as const,
+  () =>
+    [
+      props.snapshot,
+      props.selectedId,
+      props.routes,
+      props.selectedRouteIndex,
+      props.startNodeId,
+      props.endNodeId,
+    ] as const,
   () => nextTick(renderSnapshot),
   { deep: true },
 );
@@ -233,6 +302,11 @@ onBeforeUnmount(() => map?.destroy());
       <span><i class="legend-edge closed" />封闭/未知</span>
       <span><i class="legend-symbol facility-symbol">设</i>设施</span>
       <span><i class="legend-symbol barrier-symbol">障</i>障碍</span>
+      <template v-if="routes.length">
+        <span><i class="legend-route shortest" />最短路线</span>
+        <span><i class="legend-route accessible" />无障碍优先</span>
+        <span><i class="legend-route balanced" />综合路线</span>
+      </template>
     </div>
   </div>
 </template>

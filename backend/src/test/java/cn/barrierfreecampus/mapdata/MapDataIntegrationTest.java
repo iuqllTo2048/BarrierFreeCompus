@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import cn.barrierfreecampus.routing.RoutingDtos;
+import cn.barrierfreecampus.routing.RoutingService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -30,6 +32,12 @@ import org.testcontainers.utility.DockerImageName;
 @Transactional
 class MapDataIntegrationTest {
     private static final UUID DEMO_DATASET_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
+    private static final UUID NODE_2 = UUID.fromString("40000000-0000-0000-0000-000000000002");
+    private static final UUID NODE_3 = UUID.fromString("40000000-0000-0000-0000-000000000003");
+    private static final UUID NODE_7 = UUID.fromString("40000000-0000-0000-0000-000000000007");
+    private static final UUID NODE_8 = UUID.fromString("40000000-0000-0000-0000-000000000008");
+    private static final UUID EDGE_2 = UUID.fromString("50000000-0000-0000-0000-000000000002");
+    private static final UUID EDGE_6 = UUID.fromString("50000000-0000-0000-0000-000000000006");
 
     @Container
     static final PostgreSQLContainer<?> POSTGIS = new PostgreSQLContainer<>(
@@ -54,6 +62,9 @@ class MapDataIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private RoutingService routingService;
 
     @Test
     void shouldMigrateSeedAndQueryGcj02SpatialData() {
@@ -159,5 +170,125 @@ class MapDataIntegrationTest {
         });
         assertThat(refreshed.edges()).extracting(MapDtos.EdgeView::id).contains(edge);
         assertThat(refreshed.facilities()).extracting(MapDtos.FacilityView::id).contains(facility);
+    }
+
+    @Test
+    void shouldProduceDifferentWalkingProfilesAndWheelchairDetour() {
+        RoutingDtos.RoutePlanResponse walking = routingService.plan(routeRequest(
+                NODE_2, NODE_3, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+        RoutingDtos.RoutePlanResponse wheelchair = routingService.plan(routeRequest(
+                NODE_2, NODE_3, RoutingDtos.MobilityMode.WHEELCHAIR, RoutingDtos.RoutePreferences.defaults()));
+
+        assertThat(walking.routes()).isNotEmpty();
+        RoutingDtos.RouteResult shortest = walking.routes().stream()
+                .filter(route -> route.equivalentProfiles().contains(RoutingDtos.RouteProfile.SHORTEST))
+                .findFirst()
+                .orElseThrow();
+        RoutingDtos.RouteResult accessible = walking.routes().stream()
+                .filter(route -> route.equivalentProfiles().contains(RoutingDtos.RouteProfile.ACCESSIBLE))
+                .findFirst()
+                .orElseThrow();
+        assertThat(shortest.edgeIds()).contains(EDGE_2);
+        assertThat(shortest.stairsCount()).isEqualTo(12);
+        assertThat(accessible.edgeIds()).doesNotContain(EDGE_2);
+        assertThat(wheelchair.routes()).isNotEmpty().allSatisfy(route -> {
+            assertThat(route.edgeIds()).doesNotContain(EDGE_2);
+            assertThat(route.stairsCount()).isZero();
+        });
+    }
+
+    @Test
+    void shouldApplyBlockedRoadImmediatelyWithoutRestart() {
+        RoutingDtos.RoutePlanResponse before = routingService.plan(routeRequest(
+                NODE_7, NODE_8, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+        assertThat(before.routes()).anySatisfy(route -> assertThat(route.edgeIds()).contains(EDGE_6));
+
+        jdbcTemplate.update("UPDATE route_edge SET status='BLOCKED' WHERE id=?", EDGE_6);
+        RoutingDtos.RoutePlanResponse after = routingService.plan(routeRequest(
+                NODE_7, NODE_8, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+
+        assertThat(after.routes()).isNotEmpty().allSatisfy(route -> assertThat(route.edgeIds()).doesNotContain(EDGE_6));
+        assertThat(after.routes()).allSatisfy(route -> assertThat(route.distanceM()).isGreaterThan(98));
+    }
+
+    @Test
+    void shouldApplyApprovedActiveBarrierImmediatelyAndIgnoreExpiredBarrier() {
+        jdbcTemplate.update(
+                """
+                INSERT INTO barrier_report(
+                  id,dataset_id,external_id,title,barrier_type,review_status,active,
+                  starts_at,ends_at,data_source,confidence_level,geom)
+                VALUES (?::uuid,?::uuid,'BAR-INTEGRATION-ACTIVE','集成测试动态封路',
+                  'VEHICLE_BLOCKING','APPROVED',TRUE,CURRENT_TIMESTAMP - INTERVAL '1 minute',
+                  CURRENT_TIMESTAMP + INTERVAL '1 hour','USER_REPORT','LOW',
+                  ST_SetSRID(ST_MakePoint(112.9360,28.1780),0))
+                """,
+                "71000000-0000-0000-0000-000000000001",
+                DEMO_DATASET_ID.toString());
+
+        RoutingDtos.RoutePlanResponse active = routingService.plan(routeRequest(
+                NODE_7, NODE_8, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+        assertThat(active.routes()).isNotEmpty().allSatisfy(route -> assertThat(route.edgeIds()).doesNotContain(EDGE_6));
+
+        jdbcTemplate.update(
+                "UPDATE barrier_report SET ends_at=CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE external_id='BAR-INTEGRATION-ACTIVE'");
+        RoutingDtos.RoutePlanResponse expired = routingService.plan(routeRequest(
+                NODE_7, NODE_8, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+        assertThat(expired.routes()).anySatisfy(route -> assertThat(route.edgeIds()).contains(EDGE_6));
+    }
+
+    @Test
+    void shouldReturnNoRouteAndDeduplicateSameNodeProfiles() {
+        RoutingDtos.RoutePlanResponse sameNode = routingService.plan(routeRequest(
+                NODE_2, NODE_2, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+        assertThat(sameNode.routes()).hasSize(1);
+        assertThat(sameNode.routes().getFirst().equivalentProfiles()).containsExactlyInAnyOrder(
+                RoutingDtos.RouteProfile.SHORTEST,
+                RoutingDtos.RouteProfile.ACCESSIBLE,
+                RoutingDtos.RouteProfile.BALANCED);
+        assertThat(sameNode.routes().getFirst().geometry().path("coordinates")).hasSize(2);
+        assertThat(sameNode.routes().getFirst().distanceM()).isZero();
+
+        jdbcTemplate.update(
+                "UPDATE route_edge SET status='BLOCKED' WHERE from_node_id=? OR to_node_id=?", NODE_2, NODE_2);
+        RoutingDtos.RoutePlanResponse noRoute = routingService.plan(routeRequest(
+                NODE_2, NODE_3, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults()));
+        assertThat(noRoute.routes()).isEmpty();
+        assertThat(noRoute.notices()).anyMatch(notice -> notice.contains("不存在可达路线"));
+    }
+
+    @Test
+    void shouldRejectOutOfRangePreferenceAtApiBoundary() throws Exception {
+        String body = """
+                {
+                  "datasetId":"20000000-0000-0000-0000-000000000001",
+                  "startNodeId":"40000000-0000-0000-0000-000000000002",
+                  "endNodeId":"40000000-0000-0000-0000-000000000003",
+                  "mobilityMode":"WALKING",
+                  "travelPeriod":"DAY",
+                  "preferences":{"distanceWeight":9.0}
+                }
+                """;
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/routes/plan")
+                        .with(user("demo-user").roles("USER"))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    private RoutingDtos.RoutePlanRequest routeRequest(
+            UUID start,
+            UUID end,
+            RoutingDtos.MobilityMode mode,
+            RoutingDtos.RoutePreferences preferences) {
+        return new RoutingDtos.RoutePlanRequest(
+                DEMO_DATASET_ID,
+                start,
+                end,
+                mode,
+                RoutingDtos.TravelPeriod.DAY,
+                preferences);
     }
 }

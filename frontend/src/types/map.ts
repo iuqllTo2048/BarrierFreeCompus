@@ -162,3 +162,100 @@ export interface GeoJsonFeatureCollection {
   coordinateSystem: CoordinateSystem;
   features: unknown[];
 }
+
+export type MobilityMode =
+  'WHEELCHAIR' | 'CRUTCH' | 'TEMPORARY_INJURY' | 'CART_LUGGAGE' | 'WALKING';
+export type RouteProfile = 'SHORTEST' | 'ACCESSIBLE' | 'BALANCED';
+export type TravelPeriod = 'DAY' | 'NIGHT';
+
+export interface RoutePreferences {
+  avoidStairs: boolean;
+  distanceWeight: number;
+  slopeWeight: number;
+  widthWeight: number;
+  restAreaWeight?: number;
+  accessibleToiletWeight?: number;
+}
+
+export interface RoutePlanRequest {
+  datasetId: string;
+  startNodeId: string;
+  endNodeId: string;
+  mobilityMode: MobilityMode;
+  travelPeriod: TravelPeriod;
+  preferences: RoutePreferences;
+}
+
+export interface CostBreakdown {
+  distance: number;
+  slope: number;
+  stairs: number;
+  width: number;
+  surface: number;
+  lighting: number;
+  barrier: number;
+  uncertainty: number;
+  facilityPreference: number;
+  total: number;
+}
+
+export interface AlgorithmMetrics {
+  expandedNodes: number;
+  visitedEdges: number;
+  queuePeak: number;
+  elapsedMicros: number;
+  totalCost: number;
+}
+
+export interface RouteFacility {
+  id: string;
+  name: string;
+  facilityType: string;
+  openStatus: string;
+  confidenceLevel: ConfidenceLevel;
+  lng: number;
+  lat: number;
+}
+
+export interface RouteBarrier {
+  id: string;
+  title: string;
+  barrierType: string;
+  confidenceLevel: ConfidenceLevel;
+  blocking: boolean;
+}
+
+export interface RouteResult {
+  profile: RouteProfile;
+  equivalentProfiles: RouteProfile[];
+  geometry: GeoJsonGeometry;
+  distanceM: number;
+  estimatedMinutes: number;
+  riskSummary: {
+    level: RiskLevel;
+    highRiskEdges: number;
+    mediumRiskEdges: number;
+    unknownRiskEdges: number;
+    fallbackRoute: boolean;
+  };
+  stairsCount: number;
+  slopeSummary: Record<string, number>;
+  facilities: RouteFacility[];
+  barriers: RouteBarrier[];
+  confidence: ConfidenceLevel;
+  costBreakdown: CostBreakdown;
+  constraints: string[];
+  warnings: string[];
+  algorithmMetrics: AlgorithmMetrics;
+  edgeIds: string[];
+}
+
+export interface RoutePlanResponse {
+  datasetId: string;
+  startNodeId: string;
+  endNodeId: string;
+  mobilityMode: MobilityMode;
+  travelPeriod: TravelPeriod;
+  routes: RouteResult[];
+  notices: string[];
+}

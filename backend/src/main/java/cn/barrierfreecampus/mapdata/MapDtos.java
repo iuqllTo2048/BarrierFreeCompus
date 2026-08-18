@@ -98,7 +98,7 @@ public final class MapDtos {
             @NotBlank @Pattern(regexp = "ASPHALT|CONCRETE|BRICK|GRAVEL|DIRT|UNKNOWN") String surfaceType,
             @NotBlank @Pattern(regexp = "NONE|LOW|MEDIUM|HIGH|UNKNOWN") String lightingLevel,
             boolean bidirectional,
-            @NotBlank @Pattern(regexp = "ACTIVE|INACTIVE|CLOSED") String status,
+            @NotBlank @Pattern(regexp = "ACTIVE|INACTIVE|CLOSED|BLOCKED") String status,
             @NotBlank @Pattern(regexp = "LOW|MEDIUM|HIGH|UNKNOWN") String riskLevel,
             @Valid List<Coordinate> intermediatePoints) {
     }
