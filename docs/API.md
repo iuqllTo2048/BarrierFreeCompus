@@ -1,48 +1,39 @@
-# API.md — Stage 1 接口
+# API.md — v0.2.0 接口
 
-统一响应：
+统一响应为 `{ "code": 0, "message": "成功", "data": ... }`；错误同时使用真实 HTTP 状态码且不暴露堆栈或密钥。认证仍使用 Bearer Access Token 和 HttpOnly Refresh Cookie。
 
-```json
-{
-  "code": 0,
-  "message": "成功",
-  "data": {}
-}
-```
-
-错误同时使用正确 HTTP 状态码，`code` 与 HTTP 状态一致；响应不暴露堆栈或密钥。
-
-## 认证
+## 用户地图
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | `/api/auth/login` | 公开 | 用户名密码登录，响应 Access Token 并设置 HttpOnly Refresh Cookie |
-| POST | `/api/auth/refresh` | Refresh Cookie | 轮换 Refresh Token 并返回新 Access Token |
-| POST | `/api/auth/logout` | 公开 | 服务端撤销有效 Refresh Token 并清除 Cookie |
-| GET | `/api/auth/me` | Bearer Token | 获取当前用户名和角色 |
+| GET | `/api/map/datasets` | USER/ADMIN | 仅返回已启用数据集 |
+| GET | `/api/map/datasets/{datasetId}/snapshot?bbox=minLng,minLat,maxLng,maxLat` | USER/ADMIN | 获取空间范围内地图快照 |
 
-登录请求：
+快照包含 dataset、buildings、entrances、nodes、edges、facilities 和 barriers。数据集停用后用户接口不再暴露该数据集。
 
-```json
-{
-  "username": "demo_user",
-  "password": "Demo@12345"
-}
-```
+## 管理地图
 
-Access Token 通过 `Authorization: Bearer <token>` 发送。前端仅保存在运行内存，不写入 localStorage/sessionStorage。
+所有接口前缀为 `/api/admin/map`，仅 ADMIN 可访问。
 
-## 权限验收接口
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/datasets` | 包含停用项的数据集列表 |
+| GET | `/datasets/{datasetId}/snapshot` | 管理地图快照 |
+| PATCH | `/datasets/{datasetId}` | 启用/停用数据集，Body：`{"enabled":true}` |
+| POST / PUT | `/datasets/{datasetId}/nodes[/{id}]` | 新增或编辑/停用节点 |
+| POST / PUT | `/datasets/{datasetId}/edges[/{id}]` | 新增或编辑道路及中间折点 |
+| POST | `/datasets/{datasetId}/buildings` | 新增建筑 |
+| POST | `/datasets/{datasetId}/entrances` | 新增入口 |
+| POST | `/datasets/{datasetId}/facilities` | 新增设施 |
+| POST | `/datasets/{datasetId}/barriers` | 新增障碍 |
+| GET | `/datasets/{datasetId}/geojson` | 导出节点、道路、设施 |
+| POST | `/datasets/{datasetId}/geojson` | 校验并幂等导入 Demo GeoJSON |
 
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/api/user/home` | USER 或 ADMIN | 用户端认证探针 |
-| GET | `/api/admin/dashboard` | ADMIN | 管理端认证探针 |
+地图写操作会记录 `audit_log`。导入要求 `FeatureCollection`、匹配的 `datasetId`、`coordinateSystem=GCJ02`，且仅接受 node、edge、facility；道路引用的端点必须存在。
 
-这两个接口只用于 Stage 1 权限骨架，不代表地图或治理业务已实现。
+## 认证与运维
 
-## 运维与文档
-
+- `POST /api/auth/login`、`POST /api/auth/refresh`、`POST /api/auth/logout`、`GET /api/auth/me`
 - 健康检查：`GET /actuator/health`
 - Swagger：`/swagger-ui.html`
 - OpenAPI JSON：`/v3/api-docs`

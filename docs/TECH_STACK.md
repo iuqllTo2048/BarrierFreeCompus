@@ -1,16 +1,18 @@
 # TECH_STACK.md — BarrierFreeCampus 技术栈记录
 
-## Stage 1 实际技术栈
+## v0.2.0 实际技术栈
 
 | 范畴 | 技术与版本 |
 |---|---|
 | 后端运行时 | Java 21、Spring Boot 3.5.14、Maven 3.9.x |
 | Web 与安全 | Spring Web、Validation、Spring Security、BCrypt、JJWT 0.12.6 |
-| 数据访问 | PostgreSQL 17、PostGIS 3.5、Flyway、MyBatis-Plus 3.5.12 |
+| 数据与空间 | PostgreSQL 17、PostGIS 3.5、Flyway、MyBatis-Plus 3.5.12、JdbcTemplate |
 | API 与运维 | SpringDoc OpenAPI 2.8.9、Actuator |
 | 前端 | Vue 3.5、TypeScript 5.7、Vite 6.4、Vue Router 4.5、Pinia 3、Axios、Element Plus 2.9 |
+| 地图 | 高德 JavaScript API 2.0、`@amap/amap-jsapi-loader` 1.0.1、GeoJSON |
 | 前端质量 | ESLint 9、Prettier 3、Vitest 3、vue-tsc |
-| 部署 | Docker Compose、Nginx 1.27 Alpine、Node 22 Alpine 构建镜像、Temurin 21 JRE |
+| 后端测试 | JUnit 5、Spring Boot Test、Spring Security Test、Testcontainers 1.21 |
+| 部署 | Docker Compose、Nginx 1.27 Alpine、Node 22 Alpine、Temurin 21 JRE |
 
 具体补丁版本以 `backend/pom.xml` 与 `frontend/package-lock.json` 为准。
 
@@ -31,7 +33,6 @@
 
 | 技术 | 计划阶段 |
 |---|---:|
-| 高德 JS API、`@amap/amap-jsapi-loader`、GeoJSON | Stage 2 |
 | A* 自建路网 | Stage 3 |
 | LangChain4j、SSE | Stage 5 |
 | ECharts | Stage 6 |

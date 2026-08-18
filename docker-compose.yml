@@ -15,7 +15,12 @@ services:
     ports: ["8081:8080"]
     depends_on: { db: { condition: service_healthy } }
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        AMAP_JS_KEY: "${AMAP_JS_KEY:?请在 .env 中配置高德 Web JS API Key}"
+    environment:
+      AMAP_SECURITY_JS_CODE: "${AMAP_SECURITY_JS_CODE:?请在 .env 中配置高德安全密钥}"
     ports: ["8080:80"]
     depends_on: [backend]
 volumes: { postgres-data: {} }

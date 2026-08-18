@@ -25,6 +25,16 @@ server {
     proxy_pass http://backend:8080;
   }
 
+  location /_AMapService/v4/map/styles {
+    set $args "$args&jscode=${AMAP_SECURITY_JS_CODE}";
+    proxy_pass https://webapi.amap.com/v4/map/styles;
+  }
+
+  location /_AMapService/ {
+    set $args "$args&jscode=${AMAP_SECURITY_JS_CODE}";
+    proxy_pass https://restapi.amap.com/;
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
   }

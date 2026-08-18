@@ -1,7 +1,7 @@
 {
   "name": "barrierfreecampus-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.8.4",
     "element-plus": "^2.9.7",
@@ -20,6 +21,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@amap/amap-jsapi-types": "^0.0.15",
     "@eslint/js": "^9.22.0",
     "@vitejs/plugin-vue": "^5.2.3",
     "eslint": "^9.22.0",
