@@ -33,6 +33,26 @@ Stage 4 的障碍匹配、审核、自动过期、历史、收藏和设施互动
 | `DB_USERNAME` | 数据库用户名 | `barrierfree` |
 | `DB_PASSWORD` | 数据库密码 | `barrierfree`（仅应用默认，Compose 要求显式配置） |
 
-## Stage 5 预留
+## Stage 5 智能体配置
 
-`AI_ENABLED`、`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL_NAME` 仅为后续智能体预留；当前不调用外部 AI。v1.0 不使用 OSS。
+| 环境变量 | 默认值 | 用途 |
+|---|---|---|
+| `AI_ENABLED` | `false` | `false` 使用确定性 Mock，不连接外部服务 |
+| `AI_BASE_URL` | 空 | OpenAI-compatible 服务地址 |
+| `AI_API_KEY` | 空 | Provider 密钥，只能放在本地 `.env` 或部署 Secret |
+| `AI_MODEL_NAME` | 空 | Provider 模型名称 |
+
+`AI_ENABLED=false` 时其余三个变量允许为空，后端正常启动且自动测试不会消耗 Token。设为 `true` 时三个变量必须全部提供，否则后端以明确配置错误拒绝启动。
+
+DeepSeek V4 Flash 配置示例（密钥仍只写本地 `.env`）：
+
+```dotenv
+AI_ENABLED=true
+AI_BASE_URL=https://api.deepseek.com
+AI_API_KEY=<local-secret>
+AI_MODEL_NAME=deepseek-v4-flash
+```
+
+业务 Tool 和应用服务不依赖 DeepSeek。外部模型超时或限流时，后端会保留已完成的白名单 Tool 和 A* 路线结果，通过 SSE 标记降级，不影响手工路线功能。切换其他 OpenAI-compatible Provider 后仍需验证流式行为。
+
+后端禁用 LangChain4j 原始请求/响应日志，Key 不进入数据库、SSE、管理端日志或 Git。v1.0 不使用 OSS。

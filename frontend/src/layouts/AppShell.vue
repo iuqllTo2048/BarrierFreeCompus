@@ -22,6 +22,7 @@ async function signOut(): Promise<void> {
       <nav aria-label="主导航">
         <RouterLink to="/user"> 路线规划 </RouterLink>
         <RouterLink to="/user/services"> 用户服务 </RouterLink>
+        <RouterLink to="/user/assistant"> 智能路线助手 </RouterLink>
         <RouterLink v-if="auth.role === 'ADMIN'" to="/admin"> 地图数据 </RouterLink>
         <RouterLink v-if="auth.role === 'ADMIN'" to="/admin/governance"> 治理工作台 </RouterLink>
       </nav>

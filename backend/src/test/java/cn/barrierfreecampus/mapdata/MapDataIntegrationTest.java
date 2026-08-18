@@ -3,6 +3,10 @@ package cn.barrierfreecampus.mapdata;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -12,6 +16,11 @@ import cn.barrierfreecampus.routing.RoutingService;
 import cn.barrierfreecampus.business.BusinessDtos;
 import cn.barrierfreecampus.business.BusinessService;
 import cn.barrierfreecampus.auth.JwtService;
+import cn.barrierfreecampus.agent.AgentDtos;
+import cn.barrierfreecampus.agent.AgentRepository;
+import cn.barrierfreecampus.agent.AgentTools;
+import cn.barrierfreecampus.agent.AiProperties;
+import cn.barrierfreecampus.agent.AgentExecutionContext;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +33,8 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -75,6 +86,15 @@ class MapDataIntegrationTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private AgentTools agentTools;
+
+    @Autowired
+    private AgentRepository agentRepository;
+
+    @Autowired
+    private AiProperties aiProperties;
 
     @Test
     void shouldMigrateSeedAndQueryGcj02SpatialData() {
@@ -425,6 +445,85 @@ class MapDataIntegrationTest {
                 .isEqualTo(5);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM audit_log WHERE action='DEMO_RESET'", Integer.class)).isGreaterThanOrEqualTo(1);
+    }
+
+    @Test
+    void agentToolsMustUseRealCampusDataAndDeterministicRouting() {
+        List<AgentDtos.PlaceResult> places = agentTools.searchCampusPlace(
+                DEMO_DATASET_ID, "从图书馆到体育与健康中心，轮椅怎么走", 8);
+        assertThat(places).extracting(AgentDtos.PlaceResult::name)
+                .contains("图书馆", "体育与健康中心");
+
+        UUID start = places.stream().filter(item -> item.name().equals("图书馆"))
+                .findFirst().orElseThrow().nearestNodeId();
+        UUID end = places.stream().filter(item -> item.name().equals("体育与健康中心"))
+                .findFirst().orElseThrow().nearestNodeId();
+        RoutingDtos.RoutePlanResponse routes = agentTools.calculateAccessibleRoutes(new RoutingDtos.RoutePlanRequest(
+                DEMO_DATASET_ID, start, end, RoutingDtos.MobilityMode.WHEELCHAIR,
+                RoutingDtos.TravelPeriod.DAY, RoutingDtos.RoutePreferences.defaults()));
+
+        assertThat(routes.routes()).isNotEmpty().allSatisfy(route -> assertThat(route.stairsCount()).isZero());
+        assertThat(agentTools.compareRoutes(routes).recommendedProfile()).isNotBlank();
+        assertThat(agentTools.searchFacilitiesNearRoute(routes)).isNotNull();
+        assertThat(agentTools.searchActiveBarriers(DEMO_DATASET_ID)).allSatisfy(barrier ->
+                assertThat(barrier.title()).isNotBlank());
+    }
+
+    @Test
+    void agentBarrierToolMustCreateDraftWithoutWritingFormalReport() {
+        AgentDtos.ConversationView conversation = agentRepository.createConversation(
+                "demo_user", "障碍草稿测试", aiProperties);
+        int reportsBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM barrier_report", Integer.class);
+        BusinessDtos.BarrierSubmitRequest payload = new BusinessDtos.BarrierSubmitRequest(
+                DEMO_DATASET_ID, "图书馆附近积水", "WATERLOGGING", "轮椅通行困难", 12,
+                112.9365, 28.1785);
+
+        AgentDtos.BarrierDraftView draft;
+        try {
+            AgentExecutionContext.setUsername("demo_user");
+            draft = agentTools.createBarrierReportDraft(conversation.id(), payload);
+        } finally {
+            AgentExecutionContext.clear();
+        }
+
+        assertThat(draft.status()).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM barrier_report", Integer.class))
+                .isEqualTo(reportsBefore);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ai_action_draft WHERE id=? AND status='PENDING'", Integer.class, draft.id()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void userMustNotReadAgentInvocationLogs() throws Exception {
+        mockMvc.perform(get("/api/admin/agent/invocations").with(user("demo_user").roles("USER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void agentSseMustCompleteAfterAuthenticatedAsyncRedispatch() throws Exception {
+        AgentDtos.ConversationView conversation = agentRepository.createConversation(
+                "demo_user", "SSE 集成测试", aiProperties);
+        String body = """
+                {
+                  "datasetId":"20000000-0000-0000-0000-000000000001",
+                  "content":"从图书馆到体育与健康中心，轮椅怎么走？",
+                  "mobilityMode":"WHEELCHAIR"
+                }
+                """;
+
+        MvcResult started = mockMvc.perform(post("/api/agent/conversations/{id}/messages/stream", conversation.id())
+                        .with(user("demo_user").roles("USER"))
+                        .contentType("application/json")
+                        .content(body))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(started))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:route_result")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:done")));
     }
 
     private RoutingDtos.RoutePlanRequest routeRequest(

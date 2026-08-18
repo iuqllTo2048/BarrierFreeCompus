@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import CampusMap from '../components/CampusMap.vue';
 import * as businessApi from '../services/business-api';
+import * as agentApi from '../services/agent-api';
 import { readApiMessage } from '../services/http';
 import { useMapDataStore } from '../stores/map-data';
 import type {
@@ -13,6 +14,7 @@ import type {
   FacilitySuggestion,
   SystemSetting,
 } from '../types/business';
+import type { InvocationLog } from '../types/agent';
 
 const mapData = useMapDataStore();
 const tab = ref('overview');
@@ -22,6 +24,7 @@ const users = ref<AdminUser[]>([]);
 const audits = ref<AuditEntry[]>([]);
 const settings = ref<SystemSetting[]>([]);
 const suggestions = ref<FacilitySuggestion[]>([]);
+const invocations = ref<InvocationLog[]>([]);
 const selectedBarrierId = ref('');
 const reviewNote = ref('');
 const fieldVerified = ref(false);
@@ -60,10 +63,18 @@ async function loadAll(): Promise<void> {
     businessApi.getAudits(),
     businessApi.getSettings(),
     businessApi.getAdminSuggestions(),
+    agentApi.getInvocationLogs(),
     mapData.load(true),
   ]);
-  [overview.value, barriers.value, users.value, audits.value, settings.value, suggestions.value] =
-    values;
+  [
+    overview.value,
+    barriers.value,
+    users.value,
+    audits.value,
+    settings.value,
+    suggestions.value,
+    invocations.value,
+  ] = values;
   selectedBarrierId.value ||= barriers.value[0]?.id ?? '';
 }
 async function review(decision: string): Promise<void> {
@@ -308,6 +319,50 @@ onMounted(loadAll);
           ></el-table
         ></el-tab-pane
       >
+
+      <el-tab-pane label="智能体调用日志" name="agent-logs">
+        <div class="agent-log-notice">
+          仅展示脱敏运行摘要、工具名称与延迟；不保存或展示 API Key、完整堆栈和模型隐藏思维链。
+        </div>
+        <el-table :data="invocations" stripe>
+          <el-table-column prop="username" label="用户" width="130" />
+          <el-table-column label="Provider / 模型" min-width="190">
+            <template #default="scope">
+              <strong>{{ scope.row.provider }}</strong
+              ><br />
+              <span class="muted">{{ scope.row.modelName }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="结果" width="110">
+            <template #default="scope">
+              <el-tag :type="scope.row.success ? 'success' : 'danger'">
+                {{ scope.row.success ? '成功' : '失败' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="耗时" width="100">
+            <template #default="scope">{{ scope.row.latencyMs }} ms</template>
+          </el-table-column>
+          <el-table-column label="业务工具" min-width="230">
+            <template #default="scope">
+              <span v-if="!scope.row.tools.length" class="muted">未调用工具</span>
+              <div v-for="tool in scope.row.tools" :key="tool.toolName" class="agent-tool-line">
+                <span :class="tool.success ? 'tool-ok' : 'tool-error'" aria-hidden="true">
+                  {{ tool.success ? '✓' : '!' }}
+                </span>
+                {{ tool.toolName }} · {{ tool.latencyMs }} ms
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="requestId" label="Request ID" min-width="230" />
+          <el-table-column label="错误摘要" min-width="180">
+            <template #default="scope">{{ scope.row.errorSummary || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="时间" width="180">
+            <template #default="scope">{{ formatDate(scope.row.createdAt) }}</template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
 
       <el-tab-pane label="系统设置" name="settings"
         ><div class="settings-list">

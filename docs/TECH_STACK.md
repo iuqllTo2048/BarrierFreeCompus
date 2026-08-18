@@ -1,6 +1,6 @@
 # TECH_STACK.md — BarrierFreeCampus 技术栈记录
 
-## v0.4.0 实际技术栈
+## v0.5.0 实际技术栈
 
 | 范畴 | 技术与版本 |
 |---|---|
@@ -12,6 +12,7 @@
 | 地图 | 高德 JavaScript API 2.0、`@amap/amap-jsapi-loader` 1.0.1、GeoJSON |
 | 路线算法 | 自建有向路网、可解释 A*、三 Profile 并行规划与候选去重 |
 | 业务闭环 | Spring Scheduler、PostGIS 邻近匹配、评分/评论/建议、历史/收藏、审核与审计 |
+| 智能体 | LangChain4j 1.18.0、OpenAI-compatible Gateway、确定性 Mock、SSE、白名单 Tool |
 | 前端质量 | ESLint 9、Prettier 3、Vitest 3、vue-tsc |
 | 后端测试 | JUnit 5、Spring Boot Test、Spring Security Test、Testcontainers 1.21 |
 | 部署 | Docker Compose、Nginx 1.27 Alpine、Node 22 Alpine、Temurin 21 JRE |
@@ -35,7 +36,6 @@
 
 | 技术 | 计划阶段 |
 |---|---:|
-| LangChain4j、SSE | Stage 5 |
 | ECharts | Stage 6 |
 | Playwright 系统验收 | Stage 8 |
 

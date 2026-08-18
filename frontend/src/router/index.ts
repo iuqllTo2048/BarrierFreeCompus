@@ -6,6 +6,7 @@ const LoginView = () => import('../views/LoginView.vue');
 const UserHomeView = () => import('../views/UserHomeView.vue');
 const AdminDashboardView = () => import('../views/AdminDashboardView.vue');
 const UserServicesView = () => import('../views/UserServicesView.vue');
+const UserAssistantView = () => import('../views/UserAssistantView.vue');
 const AdminGovernanceView = () => import('../views/AdminGovernanceView.vue');
 const AppShell = () => import('../layouts/AppShell.vue');
 
@@ -35,6 +36,12 @@ const router = createRouter({
           path: 'user/services',
           name: 'user-services',
           component: UserServicesView,
+          meta: { roles: ['USER', 'ADMIN'] },
+        },
+        {
+          path: 'user/assistant',
+          name: 'user-assistant',
+          component: UserAssistantView,
           meta: { roles: ['USER', 'ADMIN'] },
         },
         {

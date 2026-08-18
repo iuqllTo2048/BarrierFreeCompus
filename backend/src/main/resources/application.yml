@@ -26,3 +26,8 @@ app:
     access-token-ttl: PT15M
     refresh-token-ttl: P7D
     secure-cookie: ${SECURE_COOKIE:false}
+  ai:
+    enabled: ${AI_ENABLED:false}
+    base-url: ${AI_BASE_URL:}
+    api-key: ${AI_API_KEY:}
+    model-name: ${AI_MODEL_NAME:}

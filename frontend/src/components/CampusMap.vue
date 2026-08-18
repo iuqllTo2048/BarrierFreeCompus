@@ -283,14 +283,18 @@ onBeforeUnmount(() => map?.destroy());
 </script>
 
 <template>
-  <div class="campus-map-shell">
+  <div class="campus-map-shell" :class="{ 'is-loading': loading }" :aria-busy="loading">
     <div
       ref="container"
       class="amap-container"
       role="application"
       aria-label="云麓校园地图；地图对象也可通过相邻列表和表单操作"
     />
-    <div v-if="loading" class="map-state" role="status">正在加载校园地图…</div>
+    <div v-if="loading" class="map-state map-loading-state" role="status">
+      <span class="map-loading-line" aria-hidden="true" />
+      <strong>正在加载校园地图</strong>
+      <span>正在同步底图与无障碍路网…</span>
+    </div>
     <div v-else-if="error" class="map-state map-state-error" role="alert">
       <strong>地图暂时无法加载</strong>
       <span>{{ error }}</span>

@@ -14,6 +14,33 @@
   --danger: #b42318;
 }
 
+.agent-log-notice {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-secondary);
+  background: var(--color-surface-muted);
+  color: var(--color-text-secondary);
+}
+
+.agent-tool-line {
+  margin: 3px 0;
+  font-size: 12px;
+}
+
+.agent-tool-line .tool-ok,
+.agent-tool-line .tool-error {
+  display: inline-block;
+  width: 18px;
+  font-weight: 700;
+}
+
+.agent-tool-line .tool-ok {
+  color: var(--color-success);
+}
+.agent-tool-line .tool-error {
+  color: var(--color-danger);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -819,11 +846,16 @@ h2 {
   min-width: 0;
   min-height: 520px;
   overflow: hidden;
-  background: #e2ece8;
+  background: var(--map-loading-bg, #e2ece8);
 }
 .amap-container {
   position: absolute;
   inset: 0;
+  background: var(--map-loading-bg, #e2ece8);
+}
+.amap-container .amap-maps,
+.amap-container .amap-layers {
+  background: var(--map-loading-bg, #e2ece8) !important;
 }
 .map-state {
   position: absolute;
@@ -835,8 +867,39 @@ h2 {
   gap: 8px;
   padding: 24px;
   color: var(--text-muted);
-  background: var(--surface-soft);
+  background: var(--map-loading-bg, var(--surface-soft));
   text-align: center;
+}
+.map-loading-state {
+  color: var(--text-muted);
+}
+.map-loading-state strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.map-loading-line {
+  width: 112px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border);
+}
+.map-loading-line::after {
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  content: '';
+  animation: map-loading-progress 1.1s ease-in-out infinite alternate;
+}
+@keyframes map-loading-progress {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(122%);
+  }
 }
 .map-state-error strong {
   color: var(--danger);
@@ -1338,6 +1401,7 @@ h2 {
     --surface-soft: #20302c;
     --border: #35504a;
     --text-muted: #a3b7b1;
+    --map-loading-bg: #172321;
   }
   .login-page {
     background: radial-gradient(circle at 18% 20%, #173d36 0, transparent 34%), #101918;
@@ -1411,5 +1475,12 @@ h2 {
   .risk-unknown {
     color: #c2cfcb;
     background: #293936;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-loading-line::after {
+    width: 100%;
+    animation: none;
   }
 }
