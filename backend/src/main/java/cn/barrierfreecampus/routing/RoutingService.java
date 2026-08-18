@@ -97,7 +97,8 @@ public class RoutingService {
                 request.mobilityMode(),
                 request.travelPeriod(),
                 routes,
-                List.copyOf(notices));
+                List.copyOf(notices),
+                null);
     }
 
     private RoutingDtos.RouteResult toResult(

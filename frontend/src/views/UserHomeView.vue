@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { useRouter } from 'vue-router';
 import CampusMap from '../components/CampusMap.vue';
+import * as businessApi from '../services/business-api';
 import { readApiMessage } from '../services/http';
 import { planRoutes } from '../services/route-api';
 import { useMapDataStore } from '../stores/map-data';
@@ -14,6 +16,7 @@ import type {
 } from '../types/map';
 
 const mapData = useMapDataStore();
+const router = useRouter();
 const planning = ref(false);
 const result = ref<RoutePlanResponse | null>(null);
 const selectedRouteIndex = ref(0);
@@ -106,7 +109,11 @@ function swapEndpoints(): void {
   [form.startNodeId, form.endNodeId] = [form.endNodeId, form.startNodeId];
   result.value = null;
 }
-function selectNode(selection: { kind: string; id: string }): void {
+async function selectFeature(selection: { kind: string; id: string }): Promise<void> {
+  if (selection.kind === 'facility' && !selectionTarget.value) {
+    await router.push({ path: '/user/services', query: { facility: selection.id } });
+    return;
+  }
   if (selection.kind !== 'node' || !selectionTarget.value) return;
   if (selectionTarget.value === 'start') form.startNodeId = selection.id;
   else form.endNodeId = selection.id;
@@ -116,7 +123,36 @@ function selectNode(selection: { kind: string; id: string }): void {
   );
   selectionTarget.value = null;
 }
-onMounted(() => loadDataset());
+async function saveCurrentFavorite(): Promise<void> {
+  if (!result.value?.historyId || !selectedRoute.value) return;
+  const answer = await ElMessageBox.prompt('为这条路线填写收藏名称', '收藏路线', {
+    inputValue: `${nodeLabel(form.startNodeId)} → ${nodeLabel(form.endNodeId)}`,
+  });
+  await businessApi.favoriteHistory(
+    result.value.historyId,
+    selectedRoute.value.profile,
+    answer.value,
+  );
+  ElMessage.success('路线已收藏');
+}
+
+onMounted(async () => {
+  await loadDataset();
+  try {
+    const defaults = await businessApi.getProfile();
+    Object.assign(form, {
+      mobilityMode: defaults.defaultMobilityMode,
+      avoidStairs: defaults.avoidStairs,
+      distanceWeight: defaults.distanceWeight,
+      slopeWeight: defaults.slopeWeight,
+      widthWeight: defaults.widthWeight,
+      preferRestArea: defaults.preferRestArea,
+      preferToilet: defaults.preferAccessibleToilet,
+    });
+  } catch {
+    // 路线规划仍可使用本页默认值，个人配置失败不阻塞主流程。
+  }
+});
 </script>
 
 <template>
@@ -229,7 +265,7 @@ onMounted(() => loadDataset());
       :selected-route-index="selectedRouteIndex"
       :start-node-id="form.startNodeId"
       :end-node-id="form.endNodeId"
-      @feature-select="selectNode"
+      @feature-select="selectFeature"
     />
 
     <aside class="route-results-panel" aria-label="路线规划结果">
@@ -338,6 +374,9 @@ onMounted(() => loadDataset());
               </div>
             </dl>
           </details>
+          <el-button type="primary" plain class="action-button" @click="saveCurrentFavorite">
+            收藏当前路线
+          </el-button>
         </section>
       </template>
       <div v-else class="results-empty">

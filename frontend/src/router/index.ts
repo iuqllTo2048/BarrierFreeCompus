@@ -5,6 +5,8 @@ import type { UserRole } from '../types/auth';
 const LoginView = () => import('../views/LoginView.vue');
 const UserHomeView = () => import('../views/UserHomeView.vue');
 const AdminDashboardView = () => import('../views/AdminDashboardView.vue');
+const UserServicesView = () => import('../views/UserServicesView.vue');
+const AdminGovernanceView = () => import('../views/AdminGovernanceView.vue');
 const AppShell = () => import('../layouts/AppShell.vue');
 
 declare module 'vue-router' {
@@ -30,9 +32,21 @@ const router = createRouter({
           meta: { roles: ['USER', 'ADMIN'] },
         },
         {
+          path: 'user/services',
+          name: 'user-services',
+          component: UserServicesView,
+          meta: { roles: ['USER', 'ADMIN'] },
+        },
+        {
           path: 'admin',
           name: 'admin-dashboard',
           component: AdminDashboardView,
+          meta: { roles: ['ADMIN'] },
+        },
+        {
+          path: 'admin/governance',
+          name: 'admin-governance',
+          component: AdminGovernanceView,
           meta: { roles: ['ADMIN'] },
         },
       ],

@@ -258,4 +258,5 @@ export interface RoutePlanResponse {
   travelPeriod: TravelPeriod;
   routes: RouteResult[];
   notices: string[];
+  historyId: string | null;
 }

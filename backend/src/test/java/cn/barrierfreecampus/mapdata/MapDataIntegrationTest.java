@@ -9,6 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import cn.barrierfreecampus.routing.RoutingDtos;
 import cn.barrierfreecampus.routing.RoutingService;
+import cn.barrierfreecampus.business.BusinessDtos;
+import cn.barrierfreecampus.business.BusinessService;
+import cn.barrierfreecampus.auth.JwtService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +41,7 @@ class MapDataIntegrationTest {
     private static final UUID NODE_8 = UUID.fromString("40000000-0000-0000-0000-000000000008");
     private static final UUID EDGE_2 = UUID.fromString("50000000-0000-0000-0000-000000000002");
     private static final UUID EDGE_6 = UUID.fromString("50000000-0000-0000-0000-000000000006");
+    private static final UUID FACILITY_1 = UUID.fromString("60000000-0000-0000-0000-000000000001");
 
     @Container
     static final PostgreSQLContainer<?> POSTGIS = new PostgreSQLContainer<>(
@@ -65,6 +69,12 @@ class MapDataIntegrationTest {
 
     @Autowired
     private RoutingService routingService;
+
+    @Autowired
+    private BusinessService businessService;
+
+    @Autowired
+    private JwtService jwtService;
 
     @Test
     void shouldMigrateSeedAndQueryGcj02SpatialData() {
@@ -276,6 +286,145 @@ class MapDataIntegrationTest {
                         .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void shouldCloseBarrierReportTrustReviewAndExpiryLoop() {
+        jdbcTemplate.update(
+                """
+                INSERT INTO app_user(username,password_hash,role)
+                SELECT 'reporter_two',password_hash,'USER' FROM app_user WHERE username='demo_user'
+                """);
+        BusinessDtos.BarrierSubmitRequest firstRequest = new BusinessDtos.BarrierSubmitRequest(
+                DEMO_DATASET_ID, "北侧通道积水", "WATERLOGGING", "雨后出现积水，轮椅通行困难", 12,
+                112.9348, 28.1762);
+        BusinessDtos.BarrierReportView first = businessService.submitBarrier("demo_user", firstRequest);
+
+        assertThat(first.reviewStatus()).isEqualTo("PENDING");
+        assertThat(first.confidenceLevel()).isEqualTo("LOW");
+        assertThat(first.active()).isFalse();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        businessService.submitBarrier("demo_user", firstRequest))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("请勿重复提交");
+
+        BusinessDtos.BarrierReportView second = businessService.submitBarrier(
+                "reporter_two",
+                new BusinessDtos.BarrierSubmitRequest(
+                        DEMO_DATASET_ID, "北侧通道同类积水", "WATERLOGGING", "同一位置仍有积水", 12,
+                        112.9349, 28.1762));
+        assertThat(second.reviewStatus()).isEqualTo("NEEDS_VERIFICATION");
+        assertThat(second.confidenceLevel()).isEqualTo("MEDIUM");
+        assertThat(second.matchedReportId()).isEqualTo(first.id());
+        assertThat(businessService.myBarriers("demo_user").getFirst().confidenceLevel()).isEqualTo("MEDIUM");
+
+        BusinessDtos.BarrierReportView approved = businessService.reviewBarrier(
+                second.id(), "demo_admin", new BusinessDtos.BarrierReviewRequest("APPROVED", true, "现场核验"));
+        assertThat(approved.active()).isTrue();
+        assertThat(approved.confidenceLevel()).isEqualTo("HIGH");
+
+        jdbcTemplate.update("UPDATE barrier_report SET ends_at=CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id=?", second.id());
+        assertThat(businessService.expireBarriers()).isGreaterThanOrEqualTo(1);
+        assertThat(businessService.adminBarriers("ALL").stream()
+                .filter(item -> item.id().equals(second.id())).findFirst().orElseThrow().active()).isFalse();
+    }
+
+    @Test
+    void shouldSupportFacilityInteractionHistoryFavoritesAndProfile() {
+        businessService.rateFacility(FACILITY_1, "demo_user", new BusinessDtos.RatingRequest(5));
+        businessService.rateFacility(FACILITY_1, "demo_user", new BusinessDtos.RatingRequest(4));
+        businessService.commentFacility(
+                FACILITY_1, "demo_user", new BusinessDtos.CommentRequest("坡道入口容易找到"));
+        UUID suggestion = businessService.suggestFacility(
+                FACILITY_1, "demo_user", new BusinessDtos.SuggestionRequest("INFORMATION_CORRECTION", "建议补充开放时间"));
+
+        BusinessDtos.FacilityDetail detail = businessService.facility(FACILITY_1, "demo_user");
+        assertThat(detail.myRating()).isEqualTo(4);
+        assertThat(detail.ratingCount()).isEqualTo(1);
+        assertThat(detail.comments()).extracting(BusinessDtos.FacilityCommentView::content)
+                .contains("坡道入口容易找到");
+        assertThat(businessService.suggestions()).extracting(BusinessDtos.FacilitySuggestionView::id)
+                .contains(suggestion);
+        businessService.reviewSuggestion(suggestion, "ACCEPTED", "demo_admin");
+
+        RoutingDtos.RoutePlanRequest request = routeRequest(
+                NODE_2, NODE_3, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults());
+        RoutingDtos.RoutePlanResponse result = routingService.plan(request);
+        UUID historyId = businessService.recordHistory("demo_user", request, result);
+        UUID favoriteId = businessService.favorite(
+                historyId, "demo_user", new BusinessDtos.FavoriteRequest("ACCESSIBLE", "去教学楼"));
+        assertThat(businessService.history("demo_user")).extracting(BusinessDtos.RouteHistoryView::id)
+                .contains(historyId);
+        assertThat(businessService.favorites("demo_user")).extracting(BusinessDtos.FavoriteView::id)
+                .contains(favoriteId);
+
+        BusinessDtos.ProfileView updated = businessService.updateProfile(
+                "demo_user",
+                new BusinessDtos.ProfileUpdateRequest(
+                        "演示用户", "WHEELCHAIR", true, 1.2, 1.5, 1.1, true, true));
+        assertThat(updated.defaultMobilityMode()).isEqualTo("WHEELCHAIR");
+        assertThat(updated.avoidStairs()).isTrue();
+
+        businessService.deleteHistory(historyId, "demo_user");
+        assertThat(businessService.favorites("demo_user")).isEmpty();
+    }
+
+    @Test
+    void userMustNotAccessAdminBusinessApi() throws Exception {
+        mockMvc.perform(get("/api/admin/business/overview").with(user("demo_user").roles("USER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void disabledUserAccessTokenMustStopWorkingImmediately() throws Exception {
+        jdbcTemplate.update(
+                """
+                INSERT INTO app_user(username,password_hash,role,enabled)
+                SELECT 'disabled_access_user',password_hash,'USER',FALSE FROM app_user WHERE username='demo_user'
+                """);
+        String token = jwtService.issue("disabled_access_user", "USER");
+
+        mockMvc.perform(get("/api/map/datasets").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void demoResetMustRejectFormalDataset() {
+        UUID formalId = UUID.fromString("20000000-0000-0000-0000-000000000099");
+        jdbcTemplate.update(
+                """
+                INSERT INTO dataset(id,campus_id,code,name,dataset_type,coordinate_system,enabled,is_demo,description)
+                VALUES (?,'10000000-0000-0000-0000-000000000001','FORMAL-RESET-TEST','正式数据保护测试',
+                  'FORMAL','GCJ02',TRUE,FALSE,'不得被 Demo 重置影响')
+                """,
+                formalId);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> businessService.resetDemo(formalId, "demo_admin"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("只允许重置 Demo");
+        assertThat(jdbcTemplate.queryForObject("SELECT enabled FROM dataset WHERE id=?", Boolean.class, formalId)).isTrue();
+    }
+
+    @Test
+    void demoResetMustClearBusinessDataKeepSeedAndAudit() {
+        BusinessDtos.BarrierReportView report = businessService.submitBarrier(
+                "demo_user",
+                new BusinessDtos.BarrierSubmitRequest(
+                        DEMO_DATASET_ID, "重置测试障碍", "NARROW_PATH", "仅用于验证安全重置", 6,
+                        112.9390, 28.1760));
+        businessService.rateFacility(FACILITY_1, "demo_user", new BusinessDtos.RatingRequest(3));
+
+        businessService.resetDemo(DEMO_DATASET_ID, "demo_admin");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM barrier_report WHERE id=?", Integer.class, report.id())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM facility_rating WHERE dataset_id=?", Integer.class, DEMO_DATASET_ID)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM building WHERE dataset_id=? AND active=TRUE", Integer.class, DEMO_DATASET_ID))
+                .isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE action='DEMO_RESET'", Integer.class)).isGreaterThanOrEqualTo(1);
     }
 
     private RoutingDtos.RoutePlanRequest routeRequest(

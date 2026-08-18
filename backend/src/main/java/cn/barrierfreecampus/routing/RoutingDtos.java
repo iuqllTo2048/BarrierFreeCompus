@@ -83,7 +83,8 @@ public final class RoutingDtos {
             MobilityMode mobilityMode,
             TravelPeriod travelPeriod,
             List<RouteResult> routes,
-            List<String> notices) {
+            List<String> notices,
+            UUID historyId) {
     }
 
     public record RouteResult(
