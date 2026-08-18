@@ -2,9 +2,9 @@
 
 ## 当前阶段
 
-- 当前 Stage：Stage 0（规则、环境、Skills、项目治理）
-- 状态：已初始化，待人工验收
-- 下一关卡：Design Gate（视觉方向确认）
+- 当前 Stage：Design Gate（视觉确认）
+- 状态：已完成，待人工验收
+- 下一关卡：Stage 1（基础工程）
 
 ## 已完成
 
@@ -13,6 +13,8 @@
 - 已建立忽略规则与外部配置样例；未保存任何真实密钥。
 - 已保留项目复盘 Skill，未创建 Spring Boot 或 Vue 业务代码。
 - 已在 `.agents/skills/ui-ux-pro-max/` 安装 UI UX Pro Max 2.15.0；其 `SKILL.md`、67 个脚本/数据文件可读取，并已通过 Windows `py` 调用本地查询脚本。
+- 已确认方案 A“静谧导览”：系统字体、轻量顶栏、标准信息密度与克制动效；设计细节冻结在 `docs/DESIGN_SYSTEM.md`。
+- 已创建项目专属 `barrier-free-ui` Skill，后续界面工作必须遵循已确认的设计方向与设计系统。
 
 ## 环境记录
 
@@ -33,8 +35,9 @@
 |---|---|---|
 | `barrier-free-project-recap` | 已保留 | 仅基于真实代码进行项目复盘 |
 | `ui-ux-pro-max` | 已安装 | 版本 2.15.0，项目级 universal 安装；后续界面工作使用 `py` 执行本地脚本 |
+| `barrier-free-ui` | 已创建 | 项目专属 UI 设计约束；只在 BarrierFreeCampus 的界面工作中使用 |
 
 ## 未开始
 
-- Design Gate、Stage 1 至 Stage 9。
+- Stage 1 至 Stage 9。
 - 后端、前端、数据库、地图、寻路、用户业务和 AI 功能。
