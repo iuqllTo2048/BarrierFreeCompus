@@ -509,6 +509,20 @@ class MapDataIntegrationTest {
                         DEMO_DATASET_ID, "重置测试障碍", "NARROW_PATH", "仅用于验证安全重置", 6,
                         112.9390, 28.1760));
         businessService.rateFacility(FACILITY_1, "demo_user", new BusinessDtos.RatingRequest(3));
+        jdbcTemplate.update("UPDATE dataset SET enabled=FALSE WHERE id=?", DEMO_DATASET_ID);
+        jdbcTemplate.update(
+                """
+                UPDATE route_edge SET status='ACTIVE',slope_level='FLAT',has_stairs=FALSE,stairs_count=0,
+                  width_level='WIDE',surface_type='ASPHALT',lighting_level='HIGH',risk_level='LOW'
+                WHERE dataset_id=? AND external_id IN ('E-02','E-04','E-12','E-16','E-22','E-31')
+                """,
+                DEMO_DATASET_ID);
+        jdbcTemplate.update(
+                "UPDATE accessible_facility SET active=FALSE WHERE dataset_id=? AND external_id IN ('FAC-03','FAC-08')",
+                DEMO_DATASET_ID);
+        jdbcTemplate.update(
+                "UPDATE barrier_report SET active=FALSE,review_status='REJECTED' WHERE dataset_id=? AND data_source='DEMO_GENERATED'",
+                DEMO_DATASET_ID);
 
         businessService.resetDemo(DEMO_DATASET_ID, "demo_admin");
 
@@ -519,6 +533,28 @@ class MapDataIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM building WHERE dataset_id=? AND active=TRUE", Integer.class, DEMO_DATASET_ID))
                 .isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT enabled FROM dataset WHERE id=?", Boolean.class, DEMO_DATASET_ID)).isTrue();
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT slope_level,has_stairs,stairs_count,width_level,risk_level FROM route_edge WHERE dataset_id=? AND external_id='E-02'",
+                DEMO_DATASET_ID)).containsEntry("slope_level", "MODERATE")
+                .containsEntry("has_stairs", true).containsEntry("stairs_count", 12)
+                .containsEntry("width_level", "NARROW").containsEntry("risk_level", "HIGH");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT slope_level FROM route_edge WHERE dataset_id=? AND external_id='E-12'",
+                String.class, DEMO_DATASET_ID)).isEqualTo("STEEP");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_edge WHERE dataset_id=? AND external_id IN ('E-04','E-16','E-22') AND slope_level='UNKNOWN'",
+                Integer.class, DEMO_DATASET_ID)).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM route_edge WHERE dataset_id=? AND external_id='E-31'",
+                String.class, DEMO_DATASET_ID)).isEqualTo("CLOSED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM accessible_facility WHERE dataset_id=? AND external_id IN ('FAC-03','FAC-08') AND active=TRUE",
+                Integer.class, DEMO_DATASET_ID)).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM barrier_report WHERE dataset_id=? AND external_id IN ('BAR-01','BAR-02','BAR-03') AND active=TRUE AND review_status='APPROVED'",
+                Integer.class, DEMO_DATASET_ID)).isEqualTo(3);
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM audit_log WHERE action='DEMO_RESET'", Integer.class)).isGreaterThanOrEqualTo(1);
     }

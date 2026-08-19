@@ -1,72 +1,74 @@
-# EXTERNAL_CONFIG.md — 外部与运行配置
+# EXTERNAL_CONFIG.md — v1.0 外部与运行配置
 
-真实密钥只放在本地 `.env` 或部署平台 Secret 管理中，不得提交到 Git。`.env.example` 只保留变量名。
+真实密钥只允许进入本地未提交的 `.env` 或部署平台 Secret。仓库中的 `.env.example` 只列变量名；`scripts/security-scan.ps1` 会检查误提交的 `.env`、常见 Key、私钥和证书。
 
-## Stage 2–4 必需配置
+## 1. 配置总览
 
-| 环境变量 | 是否必需 | 用途 | 未配置影响 |
-|---|---|---|---|
-| `AMAP_JS_KEY` | Compose 必需 | 高德“Web 端（JS API）”Key；Vite 构建时写入公开前端包 | Compose 构建直接拒绝；地图无法加载 |
-| `AMAP_SECURITY_JS_CODE` | Compose 必需 | 同一高德 Web JS Key 对应的安全密钥；仅供 Nginx 代理使用 | Compose 启动直接拒绝；高德鉴权失败 |
-| `DB_PASSWORD` | Compose 必需 | PostgreSQL 用户密码，同时传给后端 | 数据库或后端连接失败 |
-| `JWT_SECRET` | 必需 | JWT HMAC 密钥，至少 32 字节 | 后端拒绝启动 |
-| `SECURE_COOKIE` | 否 | 本地 HTTP 为 `false`；生产 HTTPS 必须为 `true` | HTTP 下设为 true 会导致浏览器不发送 Cookie |
+| 配置 | 何时获取/生成 | 填写位置 | 缺失影响 | 安全规则 |
+|---|---|---|---|---|
+| 高德 `AMAP_JS_KEY` | 首次启动地图前，在高德控制台申请“Web 端（JS API）”Key | 根目录 `.env`；Compose 作为前端构建参数 | Compose 构建拒绝，地图无法加载 | Key 按 JS API 机制会进入浏览器，必须配置准确域名白名单 |
+| 高德 `AMAP_SECURITY_JS_CODE` | 与同一 Web JS Key 一起获取 | 根目录 `.env`；仅注入 Nginx 运行环境 | Compose 启动拒绝，高德鉴权失败 | 不进入前端构建/Git，由同源代理追加 `jscode` |
+| `DB_PASSWORD` | 首次部署前随机生成 | `.env` 或部署 Secret | PostgreSQL/后端连接失败 | 不用默认口令；备份恢复时同步安全保管 |
+| `JWT_SECRET` | 首次部署前生成至少 32 字节随机串 | `.env` 或部署 Secret | 后端拒绝启动 | 不复用示例、数据库或 Provider 密钥；泄露后轮换并使现有令牌失效 |
+| `SECURE_COOKIE` | 按部署协议决定 | `.env` | 本地 HTTP 误设 true 会导致 Refresh Cookie 不发送 | 本地 HTTP 为 false；生产 HTTPS 必须 true |
+| `AI_ENABLED` | 需要真实模型时再启用 | `.env` | 缺省 false，使用 Mock，不影响手工路线 | 自动测试和无额度环境保持 false |
+| `AI_BASE_URL` | 从所选 OpenAI-compatible Provider 获取 | `.env` / Secret | AI_ENABLED=true 时缺失会拒绝启动 | 使用 HTTPS，核对 Provider 隐私和数据地域条款 |
+| `AI_API_KEY` | 真实模型联调前从 Provider 获取 | `.env` / Secret | AI_ENABLED=true 时缺失会拒绝启动 | 不进入数据库、SSE、日志、截图或 Git；泄露立即吊销 |
+| `AI_MODEL_NAME` | 根据 Provider 当前可用模型选择 | `.env` | AI_ENABLED=true 时缺失会拒绝启动 | 不硬编码到业务逻辑；换模型后重新验证兼容和限流 |
+| OSS | v1.0 不需要申请 | 无 | 无影响；图片字段允许为空 | 不为“完整技术栈”虚增云服务或密钥 |
 
-高德当前使用的是 Web JS API 2.0 配置，不需要额外申请 Web 服务 Key。部署到非 `localhost` 域名时，必须在高德控制台为该 Key 配置正确的域名白名单。
+## 2. 高德地图
 
-Stage 3 路线规划完全使用后端自建路网与 A*，不调用高德路径规划服务，因此没有新增外部 Key 或第三方接口配置。
+v1.0 只需一组高德 Web 端（JS API）配置，不需要 Web 服务 Key。高德负责 GCJ-02 底图、缩放、点选和覆盖物展示，不参与自建路网 A*。
 
-Stage 4 的障碍匹配、审核、自动过期、历史、收藏和设施互动均在本地后端与 PostgreSQL 中完成，没有新增外部服务或 Key。障碍匹配半径、时间窗口和自动过期开关由管理员在 `system_setting` 中维护，不通过环境变量保存。
+浏览器加载器接收公开的 `AMAP_JS_KEY`，并把 `serviceHost` 指向同源 `/_AMapService`。Nginx 在运行时将 `AMAP_SECURITY_JS_CODE` 追加到地图样式与 REST 代理请求；本地 Vite 代理采用相同变量。部署到非 localhost 域名时必须更新高德域名白名单。
 
-## 高德安全代理
+## 3. AI Provider
 
-- 浏览器加载器只接收 `AMAP_JS_KEY`，并将 `serviceHost` 指向同源 `/_AMapService`。
-- Nginx 在运行时把 `AMAP_SECURITY_JS_CODE` 追加为 `jscode`，分别代理高德地图样式与 REST 请求。
-- 安全密钥不参与前端构建、不出现在 Git；Web JS Key 本身按高德设计会出现在浏览器资源中，仍需域名白名单保护。
-- 本地 Vite 开发代理从仓库根目录 `.env` 读取同名变量，行为与 Nginx 代理一致。
+默认安全配置：
 
-## 独立后端运行
+```dotenv
+AI_ENABLED=false
+AI_BASE_URL=
+AI_API_KEY=
+AI_MODEL_NAME=
+```
 
-| 环境变量 | 说明 | 默认值 |
-|---|---|---|
-| `DB_URL` | JDBC URL | `jdbc:postgresql://localhost:5432/barrierfreecampus` |
-| `DB_USERNAME` | 数据库用户名 | `barrierfree` |
-| `DB_PASSWORD` | 数据库密码 | `barrierfree`（仅应用默认，Compose 要求显式配置） |
-
-## Stage 5 智能体配置
-
-| 环境变量 | 默认值 | 用途 |
-|---|---|---|
-| `AI_ENABLED` | `false` | `false` 使用确定性 Mock，不连接外部服务 |
-| `AI_BASE_URL` | 空 | OpenAI-compatible 服务地址 |
-| `AI_API_KEY` | 空 | Provider 密钥，只能放在本地 `.env` 或部署 Secret |
-| `AI_MODEL_NAME` | 空 | Provider 模型名称 |
-
-`AI_ENABLED=false` 时其余三个变量允许为空，后端正常启动且自动测试不会消耗 Token。设为 `true` 时三个变量必须全部提供，否则后端以明确配置错误拒绝启动。
-
-DeepSeek V4 Flash 配置示例（密钥仍只写本地 `.env`）：
+启用真实兼容服务的模板：
 
 ```dotenv
 AI_ENABLED=true
-AI_BASE_URL=https://api.deepseek.com
-AI_API_KEY=<local-secret>
-AI_MODEL_NAME=deepseek-v4-flash
+AI_BASE_URL=https://provider.example/v1
+AI_API_KEY=<local-or-platform-secret>
+AI_MODEL_NAME=<provider-model-id>
 ```
 
-业务 Tool 和应用服务不依赖 DeepSeek。外部模型超时或限流时，后端会保留已完成的白名单 Tool 和 A* 路线结果，通过 SSE 标记降级，不影响手工路线功能。切换其他 OpenAI-compatible Provider 后仍需验证流式行为。
+应用通过 LangChain4j OpenAI-compatible Gateway 调用模型。Provider 名称和模型没有写死在 Tool 或业务服务中；URL 是否需要 `/v1` 以 Provider 官方文档为准。外部模型超时、限流或失败时，助手保留白名单 Tool/A* 结果并降级，地图、手工路线、审核、统计和 CSV 不受影响。
 
-后端禁用 LangChain4j 原始请求/响应日志，Key 不进入数据库、SSE、管理端日志或 Git。v1.0 不使用 OSS。
+不启用 LangChain4j 原始请求/响应日志，不保存隐藏思维链。业务调用日志只记录 request ID、Provider、模型、耗时、结果和脱敏 Tool 摘要。
 
-## Stage 6 治理洞察配置
+## 4. 后端直连变量
 
-Stage 6 不新增外部服务或 Key。建筑评分权重和空间半径在 `application.yml` 的 `app.analytics.building-score` 中集中管理，默认总权重必须为 100，不通过前端修改。AI 治理建议沿用 Stage 5 的 `AI_*` 配置；即使 AI 关闭，基础统计和 CSV 仍可用。
+Compose 已提供数据库网络配置；只有脱离 Compose 启动后端时才需要显式设置：
 
-## Stage 7 UI/UX 配置
+| 变量 | 应用默认值 | 说明 |
+|---|---|---|
+| `DB_URL` | `jdbc:postgresql://localhost:5432/barrierfreecampus` | JDBC 地址 |
+| `DB_USERNAME` | `barrierfree` | 数据库用户 |
+| `DB_PASSWORD` | `barrierfree` | 仅开发默认；Compose 强制从 `.env` 传入 |
 
-Stage 7 不新增外部服务、Key 或环境变量。浅色/深色选择仅保存在浏览器本地存储中，不包含账号、Token 或业务数据；地图仍沿用既有高德配置。
+生产环境不得依赖应用内开发默认密码。
 
-## Stage 8 发布候选配置
+## 5. 内部可调参数
 
-Stage 8 不新增生产 Key。`docker-compose.e2e.yml` 中的数据库口令、JWT Secret 和高德字段是仅供隔离测试进程使用的固定占位值，不得复制到生产；测试环境关闭外部 AI，使用确定性 Mock，因此不会消耗模型额度。
+这些不是外部 Key：
 
-Playwright 默认驱动本机 Microsoft Edge 的 Chromium 内核，不需要额外下载浏览器副本。使用 `scripts/run-e2e.ps1` 时会创建独立 `barrierfreecampus-e2e` Compose 项目和临时数据库，测试完成后自动销毁。
+- 建筑评分权重和 100m 道路范围位于 `application.yml` 的 `app.analytics.building-score`，权重总和必须为 100。
+- 障碍匹配半径、时间窗口和调度开关位于数据库 `system_setting`，由管理员白名单接口维护。
+- 主题选择只保存在浏览器 localStorage，不包含 Token 或业务数据。
+
+## 6. 测试配置
+
+`docker-compose.e2e.yml` 的口令、JWT、高德字段都是隔离测试专用占位值，外部 AI 固定关闭。E2E 使用 18080/18081 与 PostgreSQL tmpfs，完成后销毁；这些值不得复制到正式环境，也不会消耗模型额度。
+
+Playwright 默认驱动本机 Microsoft Edge 的 Chromium 内核，不需要额外浏览器 Key 或服务账号。

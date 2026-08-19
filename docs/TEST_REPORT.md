@@ -1,62 +1,76 @@
-# TEST_REPORT.md — v0.9-rc 发布候选测试报告
+# TEST_REPORT.md — v1.0 发布验收报告
 
 > 执行日期：2026-08-19
-> 文档版本：v0.9-rc
-> 技术版本：`0.9.0-rc.1`
-> 结论：自动化发布门禁通过，等待用户人工验收后提交。
+>
+> 技术版本：`1.0.0`
+>
+> 结论：自动化发布门禁全部通过，正式 8080 演示环境健康，用户人工验收通过。
 
-## 1. 测试矩阵与结果
+## 1. 测试矩阵
 
-| 层级 | 覆盖内容 | 结果 |
+| 层级 | 覆盖 | v1.0 结果 |
 |---|---|---|
-| 路由算法 | 五种行动模式、楼梯、坡度、窄路、路面、UNKNOWN、夜间照明、封路、四种硬阻断、五种软障碍、单向、无路、同点、多 Profile、偏好与权重边界、搜索指标 | 31 个路由/性能样例通过 |
-| 后端单元与集成 | JWT 签名与篡改、刷新令牌轮换/重放/退出撤销、认证错误脱敏、USER/ADMIN 权限、请求体校验、Flyway 空库、PostGIS、Demo 重置、审核联动、AI 注入与白名单 Tool、治理统计与 CSV | 65 个 JUnit 测试通过，0 失败、0 跳过 |
-| 前端单元 | Session、地图 Store、主题、SVG、8 类设施、10 类障碍、三路线文字语义、ECharts 标签与 aria | 29 个 Vitest 测试通过 |
-| 浏览器 E2E | USER 登录/规划、轮椅路线、XSS 上报、ADMIN 治理权限、确定性 AI Mock 与手工路线、375px 导航/主题/面板 | Playwright 6/6 通过 |
-| 前端静态门禁 | vue-tsc、ESLint、Prettier、Vite production build | 全部通过 |
-| 依赖与密钥 | npm 官方漏洞库、工作区敏感信息/私钥/证书扫描 | 0 个已知 npm 漏洞；0 个疑似已提交 Secret |
-| 容器发布候选 | 独立 PostGIS 空库、7 条 Flyway 迁移、后端健康检查、Nginx/API 代理、前端 production image | 通过 |
+| 路由算法 | 五种行动模式、楼梯、坡度、窄路、路面、UNKNOWN、夜间、封路、硬/软障碍、单向、无路、同点、Profile、偏好和权重 | 31 个路由/性能样例；归入 65 个 JUnit，全部通过 |
+| 后端集成 | JWT 篡改、Refresh 轮换/重放/撤销、权限、校验、Flyway 空库、PostGIS、Demo/Formal、审核、AI Tool、统计与 CSV | 65 通过，0 失败、0 错误、0 跳过 |
+| 前端单元 | Session、地图 Store、主题、SVG、设施/障碍视觉、路线语义、ECharts aria | 29 通过 |
+| 前端静态 | TypeScript/Vue 模板、ESLint、Prettier、Vite production build | 全部通过 |
+| 浏览器 E2E | USER 登录/路线、轮椅、XSS、ADMIN 权限、Mock AI、375px 导航/主题/面板 | Chromium Edge 6/6 通过 |
+| 安全与依赖 | Git 可见 Secret/私钥/证书、npm 官方漏洞库、TODO/`any`/假实现、直接依赖使用 | Secret 0；漏洞 0；未发现阻塞项；移除 1 个冗余直接依赖 |
+| 容器发布 | 全新 PostGIS、Flyway V1–V7、后端 health、Nginx `/api`、production image | 隔离环境通过并销毁 |
+| 正式演示 | 保留数据库卷重建、健康启动顺序、Nginx/API、数据集可见 | db/backend healthy；前端 200；health UP；未登录 401 |
 
 ## 2. A* 性能基线
 
-固定 20×20 双向网格，共 400 个节点；使用轮椅模式和无障碍优先 Profile，预热 20 次后采样 100 次。该数据是算法执行耗时，不称为模型准确率。
+固定 20×20 双向网格，共 400 节点；轮椅 + 无障碍优先，预热 20 次后采样 100 次。门槛 P95 < 250,000µs。
 
-| 指标 | 首次基线 | 全量回归复测 |
+| 指标 | RC 复测 | v1.0 复测 |
 |---|---:|---:|
-| P50 | 611 µs | 620 µs |
-| P95 | 721 µs | 2,067 µs |
-| 最大值 | 1,099 µs | 8,309 µs |
-| 发布门槛 | P95 < 250,000 µs | 通过 |
+| P50 | 620µs | 413µs |
+| P95 | 2,067µs | 1,003µs |
+| 最大值 | 8,309µs | 3,034µs |
+| 结论 | 通过 | 通过 |
 
-门槛有意覆盖普通开发机抖动；比赛演示真实 Demo 路网仅 20 节点、31 道路，规模显著小于此基线。
+这些是当前机器的算法耗时，不是模型准确率、真实路线耗时或跨机器承诺。Demo 路网种子只有 20 节点、31 道路，显著小于基线。
 
 ## 3. 安全验证
 
-- 未登录访问受保护 API 返回统一 401；USER 调用管理员接口或 Demo 重置返回 403。
-- Refresh Token 使用 HttpOnly、SameSite=Lax Cookie；刷新后旧 Token 立即失效，退出后新 Token 也不可重放。
-- 登录错误不回显口令、哈希、SQL 或异常栈；格式错误与校验错误返回稳定中文信息。
-- XSS payload 经用户上报后只作为文本显示，没有执行脚本。
-- CSV 公式注入沿用前置单引号防护并通过回归。
-- AI 外部调用关闭时使用确定性 Mock；业务工具仍受白名单与角色约束，不提供 SQL、Shell、删除或角色修改 Tool。
-- `scripts/security-scan.ps1` 检查 Git 可见文件中的私钥、证书、常见 API Key 与误提交 `.env`。
+- 未登录访问受保护 API 返回 401；USER 访问管理员接口和 Demo 重置返回 403。
+- Refresh Cookie 为 HttpOnly、SameSite=Lax；刷新后旧令牌失效，退出后不可重放。
+- 禁用用户会撤销 Refresh，JWT 过滤器每次请求复核数据库状态。
+- 错误不回显密码、哈希、SQL、Key 或堆栈；XSS payload 只按文本展示。
+- CSV 对 `= + - @` 开头内容添加单引号，防止公式注入。
+- AI 默认关闭，白名单 Tool 不包含 SQL、Shell、删除、审核、角色或 Demo 重置；草稿不直接写正式障碍。
+- `scripts/security-scan.ps1` 对 Git 可见文件扫描，结果 `SECURITY_SCAN_OK tracked secrets/private keys: 0`。
+- npm 镜像站审计端点返回 404 后，改用官方 `https://registry.npmjs.org` 重新执行，结果 0 vulnerabilities。
 
-## 4. 隔离策略
+## 4. Demo 与 Formal 保护
 
-`docker-compose.e2e.yml` 使用独立项目名、`18080/18081` 端口及 PostgreSQL `tmpfs`。E2E 启停脚本始终在 `finally` 中执行 `down --volumes`，不会读取、重置或污染当前 8080 演示环境及其持久化卷。外部 AI 不被调用，高德使用测试占位配置，核心路线来自自建路网。
+- 集成测试在真实 PostGIS 中验证 Formal 数据集调用重置会被拒绝，且原状态保持不变。
+- Demo 重置测试验证清理业务数据、恢复种子对象、保留审计；前端操作前有明确二次确认。
+- 本轮没有对 8080 持久卷执行重置。正式 Compose 重建发现 Demo 被此前手工停用后，只通过现有管理员 API 重新启用；已有 21 节点、6 障碍等用户修改全部保留。
+- 五类固定场景的种子仍由 V4 定义；需要完全恢复时必须由管理员人工确认“安全重置 Demo”。
 
-## 5. 风险与限制
+## 5. 容器隔离与正式部署
 
-- `AdminAnalyticsView` 仍是最大分包：651.66 kB，gzip 218.20 kB；不阻塞当前 RC，但 v1.0 后可继续拆分 ECharts/页面内部模块。
-- Node 26.3.0 是本机非 LTS 开发环境；Docker 构建固定 Node 22 Alpine，发布产物不依赖本机 Node 主版本。
-- Playwright 使用已安装的 Microsoft Edge 151（Chromium 内核），避免额外下载约 192 MiB 浏览器副本；当前仅执行一个 Chromium 项目，不宣称 Firefox/WebKit 兼容性。
-- 高德真实 Key、域名白名单和外部模型质量/限流不进入自动化；上线前仍需在目标域名人工验证。
-- Mockito/Byte Buddy 在 Java 21 输出未来 JDK 动态 Agent 兼容提示，不影响当前测试；升级更高 JDK 时需要复查。
+E2E 使用 `barrierfreecampus-e2e`、18080/18081 和 PostgreSQL tmpfs；脚本在 `finally` 执行 `down --volumes`。正式环境使用 `postgres-data`，`docker compose down` 不删除数据。
 
-## 6. 人工验收清单
+正式 Compose 已以 v1.0 镜像重建：PostgreSQL 和 backend 显示 healthy；`http://localhost:8080/` 返回 200，Nginx 与 8081 直连 health 均返回 `{"status":"UP"}`，未登录 `/api/map/datasets` 返回 401。数据库 schema 仍为 V7。
 
-1. 在 8080 正式演示环境分别用 USER/ADMIN 登录，确认既有数据未被 E2E 重置。
-2. 用轮椅模式规划 N02 → N03，核对最短路线与无障碍绕行解释、路线线型、风险文字和地图 Marker。
-3. 上报一个临时障碍，管理员审核通过后重新规划，确认路线实时变化；随后按业务需要手工恢复或重置 Demo。
-4. 在 375px 与桌面宽度切换浅/深色，检查移动导航、路线设置/结果按钮、焦点和无横向溢出。
-5. 使用真实高德配置检查底图、设施/障碍 Marker 和无白色闪屏；再以当前模型配置验证一次 SSE 智能助手。
-6. 检查 `/actuator/health`、Swagger 和管理端治理洞察，确认 RC 容器运行稳定。
+## 6. 构建观察与非阻塞限制
+
+- `AdminAnalyticsView` 为 651.66kB，gzip 218.20kB，Vite 发出 >500kB 警告；页面已路由懒加载，v1.0 后可按 ECharts 模块继续拆包。
+- `@vueuse/core` 的第三方 PURE 注释位置触发 Rollup 清理提示，不影响产物。
+- Mockito/Byte Buddy 提示未来 JDK 将限制动态 Agent；Java 21 当前测试通过。
+- 本机 Node 26 非 LTS，但 Docker 构建固定 Node 22 Alpine。
+- 高德真实 Key/目标域名白名单和外部模型限流不适合自动化伪造，需要人工现场验收。
+
+## 7. 人工验收清单
+
+1. USER 登录，确认路线页能看到 `YUNLU_DEMO_V1`，用轮椅规划 `N-02 → N-03`，核对路线线型、楼梯硬约束、风险文字和地图 Marker。
+2. 提交一条临时障碍；ADMIN 审核通过；重新规划确认路线联动。测试后按需要手工改回或在明确确认后重置 Demo。
+3. 在管理地图新增一个测试点并编辑道路属性，确认地图可自行设置点/边且审计可见；验收后可软停用测试对象。
+4. 在 375px 和桌面宽度切换浅/深色，确认导航、路线设置/结果按钮、焦点和无白色加载闪屏。
+5. 使用真实高德配置检查底图和 `/_AMapService`；以当前 AI 配置验证一次 SSE，限流时确认手工路线仍可用。
+6. 查看治理洞察筛选、地图—图表—检查器联动、CSV 和规则/AI 摘要。
+7. 点击“安全重置 Demo”只检查二次确认文案；除非确实希望清理当前 Demo 业务数据，否则取消，不要执行。
+8. 检查 `/actuator/health`、Swagger、日志和 `docker compose ps`，确认服务稳定。

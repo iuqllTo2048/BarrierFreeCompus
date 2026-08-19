@@ -426,10 +426,40 @@ public class BusinessService {
         jdbc.update("DELETE FROM facility_suggestion WHERE dataset_id=?", datasetId);
         jdbc.update("DELETE FROM route_history WHERE dataset_id=?", datasetId);
         jdbc.update("DELETE FROM barrier_report WHERE dataset_id=? AND data_source='USER_REPORT'", datasetId);
+        jdbc.update("UPDATE dataset SET enabled=TRUE,updated_at=CURRENT_TIMESTAMP WHERE id=?", datasetId);
         jdbc.update("UPDATE building SET active=TRUE WHERE dataset_id=? AND data_source='DEMO_GENERATED'", datasetId);
         jdbc.update("UPDATE building_entrance SET active=TRUE WHERE dataset_id=? AND data_source='DEMO_GENERATED'", datasetId);
         jdbc.update("UPDATE route_node SET active=TRUE WHERE dataset_id=? AND data_source='DEMO_GENERATED'", datasetId);
-        jdbc.update("UPDATE route_edge SET status='ACTIVE' WHERE dataset_id=? AND data_source='DEMO_GENERATED'", datasetId);
+        jdbc.update(
+                """
+                UPDATE route_edge SET
+                  status=CASE WHEN external_id='E-31' THEN 'CLOSED' ELSE 'ACTIVE' END,
+                  slope_level=CASE external_id
+                    WHEN 'E-02' THEN 'MODERATE' WHEN 'E-12' THEN 'STEEP'
+                    WHEN 'E-04' THEN 'UNKNOWN' WHEN 'E-16' THEN 'UNKNOWN' WHEN 'E-22' THEN 'UNKNOWN'
+                    ELSE slope_level END,
+                  has_stairs=(external_id='E-02'),
+                  stairs_count=CASE WHEN external_id='E-02' THEN 12 ELSE 0 END,
+                  width_level=CASE
+                    WHEN external_id='E-02' THEN 'NARROW'
+                    WHEN external_id IN ('E-04','E-16','E-22') THEN 'UNKNOWN'
+                    ELSE width_level END,
+                  surface_type=CASE
+                    WHEN external_id='E-02' OR external_id='E-12' THEN 'CONCRETE'
+                    WHEN external_id IN ('E-04','E-22','E-31') THEN 'ASPHALT'
+                    WHEN external_id='E-16' THEN 'UNKNOWN' ELSE surface_type END,
+                  lighting_level=CASE
+                    WHEN external_id='E-02' OR external_id='E-31' THEN 'MEDIUM'
+                    WHEN external_id IN ('E-04','E-12','E-22') THEN 'LOW'
+                    WHEN external_id='E-16' THEN 'NONE' ELSE lighting_level END,
+                  risk_level=CASE
+                    WHEN external_id IN ('E-02','E-12','E-31') THEN 'HIGH'
+                    WHEN external_id IN ('E-04','E-16','E-22') THEN 'UNKNOWN'
+                    ELSE risk_level END,
+                  confidence_level='UNKNOWN',updated_at=CURRENT_TIMESTAMP
+                WHERE dataset_id=? AND data_source='DEMO_GENERATED'
+                """,
+                datasetId);
         jdbc.update("UPDATE accessible_facility SET active=TRUE WHERE dataset_id=? AND data_source='DEMO_GENERATED'", datasetId);
         jdbc.update(
                 """
@@ -439,7 +469,7 @@ public class BusinessService {
                 WHERE dataset_id=? AND data_source='DEMO_GENERATED'
                 """,
                 datasetId);
-        audit(userId(admin), "DEMO_RESET", "DATASET", datasetId.toString(), "business-and-status-reset");
+        audit(userId(admin), "DEMO_RESET", "DATASET", datasetId.toString(), "business-and-five-scenarios-reset");
     }
 
     @Transactional

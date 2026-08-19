@@ -1,4 +1,8 @@
-# ROUTING_ALGORITHM.md — A* 无障碍寻路说明
+# ROUTING_ALGORITHM.md — 兼容入口
+
+v1.0 正式算法文档已迁移到 [ALGORITHM.md](ALGORITHM.md)。本文件保留以兼容早期链接。
+
+以下为发布候选阶段说明；数值与边界以正式文档及源码为准。
 
 ## 路网与坐标
 

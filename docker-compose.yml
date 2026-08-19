@@ -18,6 +18,7 @@ services:
       AI_MODEL_NAME: "${AI_MODEL_NAME:-}"
     ports: ["8081:8080"]
     depends_on: { db: { condition: service_healthy } }
+    healthcheck: { test: [CMD, wget, -qO-, http://localhost:8080/actuator/health], interval: 5s, timeout: 5s, retries: 30 }
   frontend:
     build:
       context: ./frontend
@@ -26,5 +27,5 @@ services:
     environment:
       AMAP_SECURITY_JS_CODE: "${AMAP_SECURITY_JS_CODE:?请在 .env 中配置高德安全密钥}"
     ports: ["8080:80"]
-    depends_on: [backend]
+    depends_on: { backend: { condition: service_healthy } }
 volumes: { postgres-data: {} }
