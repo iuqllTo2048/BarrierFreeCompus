@@ -38,6 +38,7 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'node',
+      exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     },
   };
 });

@@ -1,6 +1,6 @@
 # TECH_STACK.md — BarrierFreeCampus 技术栈记录
 
-## v0.7.0 实际技术栈
+## v0.9-rc 实际技术栈
 
 | 范畴 | 技术与版本 |
 |---|---|
@@ -15,7 +15,7 @@
 | 智能体 | LangChain4j 1.18.0、OpenAI-compatible Gateway、确定性 Mock、SSE、白名单 Tool |
 | 治理洞察 | PostGIS 空间聚合、JSONB 路线历史聚合、建筑加权评分、CSV、ECharts |
 | UI 基础 | 项目内联 SVG 图标、语义 Token、Element Plus 二次主题、持久化浅/深色模式 |
-| 前端质量 | ESLint 9、Prettier 3、Vitest 3、vue-tsc |
+| 前端质量 | ESLint 9、Prettier 3、Vitest 3、vue-tsc、Playwright 1.62（Chromium Edge） |
 | 后端测试 | JUnit 5、Spring Boot Test、Spring Security Test、Testcontainers 1.21 |
 | 部署 | Docker Compose、Nginx 1.27 Alpine、Node 22 Alpine、Temurin 21 JRE |
 
@@ -38,7 +38,7 @@
 
 | 技术 | 计划阶段 |
 |---|---:|
-| Playwright 系统验收 | Stage 8 |
+| Firefox / WebKit 浏览器矩阵 | v1.0 后按部署目标决定 |
 
 ## 明确不使用
 

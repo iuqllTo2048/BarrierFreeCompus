@@ -113,6 +113,52 @@ class AStarRouterTest {
         assertThat(preferredRoute.path().getFirst().edge().externalId()).isEqualTo("with-rest");
     }
 
+    @Test
+    void inactiveOrMissingEndpointReturnsNoRoute() {
+        RouteGraph.Node inactive = new RouteGraph.Node(B, "inactive", "inactive", false, "HIGH", nodePoint(B));
+        RouteGraph.GraphData graph = RouteGraph.GraphData.of(
+                List.of(node(A, 112.0, 28.0), inactive),
+                List.of(edge("ordinary", A, B, 100, false, true, "ACTIVE", "FLAT", "LOW", "HIGH")));
+
+        assertThat(router.search(graph, A, B, SHORTEST, WALKING, DAY,
+                RoutingDtos.RoutePreferences.defaults(), false).found()).isFalse();
+        assertThat(router.search(graph, A, UUID.randomUUID(), SHORTEST, WALKING, DAY,
+                RoutingDtos.RoutePreferences.defaults(), false).found()).isFalse();
+    }
+
+    @Test
+    void disconnectedGraphReturnsNoRouteWithSearchMetrics() {
+        RouteGraph.GraphData graph = RouteGraph.GraphData.of(
+                List.of(node(A, 112.0, 28.0), node(B, 112.001, 28.0), node(C, 112.002, 28.0)),
+                List.of(edge("partial", A, C, 100, false, true, "ACTIVE", "FLAT", "LOW", "HIGH")));
+
+        AStarRouter.SearchOutcome result = router.search(
+                graph, A, B, SHORTEST, WALKING, DAY, RoutingDtos.RoutePreferences.defaults(), false);
+
+        assertThat(result.found()).isFalse();
+        assertThat(result.metrics().expandedNodes()).isPositive();
+        assertThat(result.metrics().visitedEdges()).isPositive();
+        assertThat(result.metrics().elapsedMicros()).isNotNegative();
+    }
+
+    @Test
+    void algorithmChoosesLowestTotalCostInsteadOfFewestEdges() {
+        RouteGraph.GraphData graph = RouteGraph.GraphData.of(
+                List.of(node(A, 112.0000, 28.0000), node(B, 112.0010, 28.0000), node(C, 112.0005, 28.0005)),
+                List.of(
+                        edge("direct-risky", A, B, 100, false, true, "ACTIVE", "STEEP", "HIGH", "LOW"),
+                        edge("safe-1", A, C, 70, false, true, "ACTIVE", "FLAT", "LOW", "HIGH"),
+                        edge("safe-2", C, B, 70, false, true, "ACTIVE", "FLAT", "LOW", "HIGH")));
+
+        AStarRouter.SearchOutcome result = router.search(
+                graph, A, B, ACCESSIBLE, WALKING, DAY, RoutingDtos.RoutePreferences.defaults(), false);
+
+        assertThat(result.path()).extracting(arc -> arc.edge().externalId())
+                .containsExactly("safe-1", "safe-2");
+        assertThat(result.metrics().totalCost()).isEqualTo(result.costBreakdown().total());
+        assertThat(result.metrics().queuePeak()).isPositive();
+    }
+
     private RouteGraph.GraphData graphWithStairShortcut(boolean shortcutBidirectional) {
         return RouteGraph.GraphData.of(
                 List.of(

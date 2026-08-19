@@ -64,3 +64,9 @@ Stage 6 不新增外部服务或 Key。建筑评分权重和空间半径在 `app
 ## Stage 7 UI/UX 配置
 
 Stage 7 不新增外部服务、Key 或环境变量。浅色/深色选择仅保存在浏览器本地存储中，不包含账号、Token 或业务数据；地图仍沿用既有高德配置。
+
+## Stage 8 发布候选配置
+
+Stage 8 不新增生产 Key。`docker-compose.e2e.yml` 中的数据库口令、JWT Secret 和高德字段是仅供隔离测试进程使用的固定占位值，不得复制到生产；测试环境关闭外部 AI，使用确定性 Mock，因此不会消耗模型额度。
+
+Playwright 默认驱动本机 Microsoft Edge 的 Chromium 内核，不需要额外下载浏览器副本。使用 `scripts/run-e2e.ps1` 时会创建独立 `barrierfreecampus-e2e` Compose 项目和临时数据库，测试完成后自动销毁。

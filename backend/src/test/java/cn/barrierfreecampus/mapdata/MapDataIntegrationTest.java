@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -147,6 +148,73 @@ class MapDataIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0].coordinateSystem").value("GCJ02"));
+    }
+
+    @Test
+    void loginRefreshRotationAndLogoutMustRevokeRefreshTokens() throws Exception {
+        MvcResult login = mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"username\":\"demo_user\",\"password\":\"Demo@12345\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.username").value("demo_user"))
+                .andExpect(jsonPath("$.data.role").value("USER"))
+                .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+                .andReturn();
+        String loginCookieHeader = login.getResponse().getHeader("Set-Cookie");
+        assertThat(loginCookieHeader).contains("HttpOnly", "SameSite=Lax", "Path=/api/auth");
+        assertThat(login.getResponse().getContentAsString()).doesNotContain("password", "password_hash");
+        String firstRefreshToken = cookieValue(loginCookieHeader, "refresh_token");
+
+        MvcResult refresh = mockMvc.perform(post("/api/auth/refresh")
+                        .cookie(new Cookie("refresh_token", firstRefreshToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+                .andReturn();
+        String rotatedRefreshToken = cookieValue(refresh.getResponse().getHeader("Set-Cookie"), "refresh_token");
+        assertThat(rotatedRefreshToken).isNotEqualTo(firstRefreshToken);
+
+        mockMvc.perform(post("/api/auth/refresh").cookie(new Cookie("refresh_token", firstRefreshToken)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("登录已过期，请重新登录"));
+
+        mockMvc.perform(post("/api/auth/logout").cookie(new Cookie("refresh_token", rotatedRefreshToken)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getHeader("Set-Cookie"))
+                        .contains("refresh_token=", "Max-Age=0"));
+        mockMvc.perform(post("/api/auth/refresh").cookie(new Cookie("refresh_token", rotatedRefreshToken)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authenticationErrorsMustBeGenericAndValidationSafe() throws Exception {
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("请先登录或刷新登录状态"));
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"username\":\"demo_user\",\"password\":\"wrong-secret\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("用户名或密码错误"))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("wrong-secret"))));
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"username\":\"\",\"password\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400));
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{not-json}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("请求体格式不正确"));
+    }
+
+    @Test
+    void userCannotResetDemoDataset() throws Exception {
+        mockMvc.perform(post("/api/admin/business/datasets/" + DEMO_DATASET_ID + "/reset-demo")
+                        .with(user("demo_user").roles("USER")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
     }
 
     @Test
@@ -613,6 +681,17 @@ class MapDataIntegrationTest {
     private AnalyticsFilter analyticsFilter() {
         return new AnalyticsFilter(DEMO_DATASET_ID, null, LocalDate.now().minusDays(29),
                 LocalDate.now(), null, null, null);
+    }
+
+    private String cookieValue(String setCookie, String name) {
+        assertThat(setCookie).isNotBlank();
+        String prefix = name + "=";
+        return java.util.Arrays.stream(setCookie.split(";"))
+                .map(String::trim)
+                .filter(part -> part.startsWith(prefix))
+                .map(part -> part.substring(prefix.length()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private RoutingDtos.RoutePlanRequest routeRequest(

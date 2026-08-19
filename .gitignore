@@ -9,6 +9,8 @@
 **/node_modules/
 **/dist/
 **/.vite/
+frontend/playwright-report/
+frontend/test-results/
 *.tsbuildinfo
 __pycache__/
 *.py[cod]

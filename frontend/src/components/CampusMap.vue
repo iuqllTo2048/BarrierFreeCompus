@@ -3,6 +3,14 @@ import AMapLoader from '@amap/amap-jsapi-loader';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppIcon from './AppIcon.vue';
 import { appIconPaths, type AppIconName } from '../services/app-icons';
+import {
+  barrierIcon,
+  barrierTypeLabel,
+  confidenceLabel,
+  facilityIcon,
+  facilityTypeLabel,
+  profileLabel,
+} from '../services/map-visuals';
 import type { Coordinate, GeoJsonGeometry, MapSnapshot, RouteResult } from '../types/map';
 
 interface LngLatValue {
@@ -184,67 +192,6 @@ function markerContent(
   element.setAttribute('title', label);
   if (selected) element.setAttribute('aria-pressed', 'true');
   return element;
-}
-
-function facilityIcon(type: string): AppIconName {
-  const icons: Record<string, AppIconName> = {
-    ACCESSIBLE_ENTRANCE: 'accessible-entrance',
-    RAMP: 'ramp',
-    ELEVATOR: 'elevator',
-    ACCESSIBLE_TOILET: 'toilet',
-    REST_AREA: 'rest-area',
-    ACCESSIBLE_PARKING: 'parking',
-    DROP_OFF_POINT: 'drop-off',
-    TRANSIT_BOARDING_POINT: 'transit',
-  };
-  return icons[type] ?? 'services';
-}
-
-function barrierIcon(type: string): AppIconName {
-  const icons: Record<string, AppIconName> = {
-    STAIRS: 'ramp',
-    TEMPORARY_CLOSURE: 'close',
-    NARROW_PATH: 'accessible-entrance',
-    VEHICLE_BLOCKING: 'parking',
-    STEEP_SLOPE: 'ramp',
-    ELEVATOR_OUTAGE: 'elevator',
-    ENTRANCE_CLOSED: 'accessible-entrance',
-  };
-  return icons[type] ?? (type === 'CONSTRUCTION' ? 'barrier' : 'warning');
-}
-
-function facilityTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    ACCESSIBLE_ENTRANCE: '无障碍入口',
-    RAMP: '坡道',
-    ELEVATOR: '电梯',
-    ACCESSIBLE_TOILET: '无障碍卫生间',
-    REST_AREA: '休息点',
-    ACCESSIBLE_PARKING: '无障碍停车位',
-    DROP_OFF_POINT: '落客点',
-    TRANSIT_BOARDING_POINT: '公共交通乘车点',
-  };
-  return labels[type] ?? '无障碍设施';
-}
-
-function barrierTypeLabel(type: string): string {
-  const labels: Record<string, string> = {
-    STAIRS: '楼梯',
-    CONSTRUCTION: '施工',
-    TEMPORARY_CLOSURE: '临时封闭',
-    DAMAGED_SURFACE: '路面破损',
-    NARROW_PATH: '道路狭窄',
-    VEHICLE_BLOCKING: '车辆占道',
-    STEEP_SLOPE: '陡坡',
-    ELEVATOR_OUTAGE: '电梯停运',
-    ENTRANCE_CLOSED: '入口关闭',
-    WATERLOGGING: '积水',
-  };
-  return labels[type] ?? '通行障碍';
-}
-
-function confidenceLabel(level: string): string {
-  return { HIGH: '高可信', MEDIUM: '中可信', LOW: '低可信', UNKNOWN: '未核验' }[level] ?? level;
 }
 
 function addSelectable(
@@ -429,12 +376,6 @@ function routeStyle(profile: RouteResult['profile']): {
   if (profile === 'BALANCED')
     return { color: cssColor('--color-secondary', '#176b82'), weight: 4, dashed: false };
   return { color: cssColor('--color-unknown', '#667085'), weight: 4, dashed: true };
-}
-
-function profileLabel(profile: RouteResult['profile']): string {
-  if (profile === 'ACCESSIBLE') return '无障碍优先';
-  if (profile === 'BALANCED') return '综合路线';
-  return '最短路线';
 }
 
 async function initialize(): Promise<void> {

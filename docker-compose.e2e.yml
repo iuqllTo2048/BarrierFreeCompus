@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment: { POSTGRES_DB: barrierfreecampus_e2e, POSTGRES_USER: barrierfree_e2e, POSTGRES_PASSWORD: e2e_database_password }
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck: { test: [CMD-SHELL, pg_isready -U barrierfree_e2e -d barrierfreecampus_e2e], interval: 3s, timeout: 3s, retries: 30 }
+  backend:
+    build: ./backend
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/barrierfreecampus_e2e
+      DB_USERNAME: barrierfree_e2e
+      DB_PASSWORD: e2e_database_password
+      JWT_SECRET: e2e-only-jwt-secret-with-at-least-thirty-two-bytes
+      SECURE_COOKIE: "false"
+      AI_ENABLED: "false"
+    ports: ["18081:8080"]
+    depends_on: { db: { condition: service_healthy } }
+    healthcheck: { test: [CMD, wget, -qO-, http://localhost:8080/actuator/health], interval: 3s, timeout: 3s, retries: 40 }
+  frontend:
+    build: { context: ./frontend, args: { AMAP_JS_KEY: e2e-placeholder-key } }
+    environment: { AMAP_SECURITY_JS_CODE: e2e-placeholder-security-code }
+    ports: ["18080:80"]
+    depends_on: { backend: { condition: service_healthy } }
