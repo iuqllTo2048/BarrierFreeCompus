@@ -60,3 +60,7 @@ AI_MODEL_NAME=deepseek-v4-flash
 ## Stage 6 治理洞察配置
 
 Stage 6 不新增外部服务或 Key。建筑评分权重和空间半径在 `application.yml` 的 `app.analytics.building-score` 中集中管理，默认总权重必须为 100，不通过前端修改。AI 治理建议沿用 Stage 5 的 `AI_*` 配置；即使 AI 关闭，基础统计和 CSV 仍可用。
+
+## Stage 7 UI/UX 配置
+
+Stage 7 不新增外部服务、Key 或环境变量。浅色/深色选择仅保存在浏览器本地存储中，不包含账号、Token 或业务数据；地图仍沿用既有高德配置。

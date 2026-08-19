@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import CampusMap from '../components/CampusMap.vue';
+import AppIcon from '../components/AppIcon.vue';
 import * as agentApi from '../services/agent-api';
 import * as businessApi from '../services/business-api';
 import { readApiMessage } from '../services/http';
@@ -202,7 +203,9 @@ onMounted(async () => {
 
       <ol v-if="timeline.length" class="tool-timeline" aria-label="业务工具执行进度">
         <li v-for="(item, index) in timeline" :key="`${item.name}-${index}`" :class="item.status">
-          <span aria-hidden="true">{{ item.status === 'done' ? '✓' : '…' }}</span>
+          <span aria-hidden="true">
+            <AppIcon :name="item.status === 'done' ? 'governance' : 'assistant'" :size="16" />
+          </span>
           <div>
             <strong>{{ toolLabels[item.name] ?? item.name }}</strong
             ><small>{{ item.summary ?? '执行中' }}</small>
@@ -295,7 +298,7 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
-  box-shadow: 0 8px 24px rgb(15 46 40 / 12%);
+  box-shadow: var(--shadow-map);
 }
 .assistant-heading h1 {
   margin: 2px 0 4px;

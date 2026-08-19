@@ -42,7 +42,7 @@ async function submit(): Promise<void> {
     <section class="login-panel" aria-labelledby="login-title">
       <p class="brand">无碍智行</p>
       <h2 id="login-title">登录校园导览</h2>
-      <p class="muted">Stage 1 已接入真实身份认证与角色权限。</p>
+      <p class="muted">登录后根据身份进入校园路线服务或数据治理工作台。</p>
       <el-form label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名">
           <el-input v-model="form.username" autocomplete="username" aria-label="用户名" />

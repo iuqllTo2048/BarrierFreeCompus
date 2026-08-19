@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import AMapLoader from '@amap/amap-jsapi-loader';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import AppIcon from './AppIcon.vue';
+import { appIconPaths, type AppIconName } from '../services/app-icons';
 import type { Coordinate, GeoJsonGeometry, MapSnapshot, RouteResult } from '../types/map';
 
 interface LngLatValue {
@@ -23,6 +25,7 @@ interface MapInstance {
   setFitView(overlays?: unknown[], immediately?: boolean, avoid?: number[]): void;
   setCenter(center: [number, number], immediately?: boolean): void;
   setZoom(zoom: number, immediately?: boolean): void;
+  setMapStyle(style: string): void;
   destroy(): void;
 }
 
@@ -86,6 +89,50 @@ const container = ref<HTMLElement | null>(null);
 const loading = ref(true);
 const error = ref('');
 const configured = computed(() => Boolean(import.meta.env.VITE_AMAP_JS_KEY));
+const selectedFeature = computed(() => {
+  if (!props.snapshot || !props.selectedId) return null;
+  const facility = props.snapshot.facilities.find((item) => item.id === props.selectedId);
+  if (facility)
+    return {
+      icon: facilityIcon(facility.facilityType),
+      kind: facilityTypeLabel(facility.facilityType),
+      title: facility.name,
+      status: `${facility.openStatus} · ${confidenceLabel(facility.confidenceLevel)}`,
+    };
+  const barrier = props.snapshot.barriers.find((item) => item.id === props.selectedId);
+  if (barrier)
+    return {
+      icon: barrierIcon(barrier.barrierType),
+      kind: barrierTypeLabel(barrier.barrierType),
+      title: barrier.title,
+      status: `${barrier.active ? '已生效' : '待核验'} · ${confidenceLabel(barrier.confidenceLevel)}`,
+    };
+  const node = props.snapshot.nodes.find((item) => item.id === props.selectedId);
+  if (node)
+    return {
+      icon: 'node' as AppIconName,
+      kind: '道路节点',
+      title: node.name ?? node.externalId,
+      status: `${node.active ? '启用' : '停用'} · ${confidenceLabel(node.confidenceLevel)}`,
+    };
+  const building = props.snapshot.buildings.find((item) => item.id === props.selectedId);
+  if (building)
+    return {
+      icon: 'building' as AppIconName,
+      kind: '校园建筑',
+      title: building.name,
+      status: `${building.active ? '启用' : '停用'} · ${confidenceLabel(building.confidenceLevel)}`,
+    };
+  const edge = props.snapshot.edges.find((item) => item.id === props.selectedId);
+  return edge
+    ? {
+        icon: 'route' as AppIconName,
+        kind: '道路',
+        title: edge.name ?? edge.externalId,
+        status: `${edge.status === 'ACTIVE' ? '启用' : '停用或封闭'} · ${edge.riskLevel} 风险`,
+      }
+    : null;
+});
 let api: AMapApi | null = null;
 let map: MapInstance | null = null;
 let overlays: unknown[] = [];
@@ -99,13 +146,105 @@ function polygonCoordinates(geometry: GeoJsonGeometry): number[][] {
   return (geometry.coordinates as number[][][])[0] ?? [];
 }
 
-function markerContent(text: string, className: string, label: string): HTMLElement {
+function cssColor(token: string, fallback: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
+}
+
+function createSvgIcon(name: AppIconName): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.8');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  for (const data of appIconPaths[name]) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', data);
+    svg.append(path);
+  }
+  return svg;
+}
+
+function markerContent(
+  icon: AppIconName | null,
+  text: string,
+  className: string,
+  label: string,
+  selected = false,
+  confidence?: string,
+): HTMLElement {
   const element = document.createElement('button');
   element.type = 'button';
-  element.className = `map-symbol ${className}`;
-  element.textContent = text;
+  element.className = `map-symbol ${className}${selected ? ' is-selected' : ''}${confidence ? ` confidence-${confidence.toLowerCase()}` : ''}`;
+  if (icon) element.append(createSvgIcon(icon));
+  else element.textContent = text;
   element.setAttribute('aria-label', label);
+  element.setAttribute('title', label);
+  if (selected) element.setAttribute('aria-pressed', 'true');
   return element;
+}
+
+function facilityIcon(type: string): AppIconName {
+  const icons: Record<string, AppIconName> = {
+    ACCESSIBLE_ENTRANCE: 'accessible-entrance',
+    RAMP: 'ramp',
+    ELEVATOR: 'elevator',
+    ACCESSIBLE_TOILET: 'toilet',
+    REST_AREA: 'rest-area',
+    ACCESSIBLE_PARKING: 'parking',
+    DROP_OFF_POINT: 'drop-off',
+    TRANSIT_BOARDING_POINT: 'transit',
+  };
+  return icons[type] ?? 'services';
+}
+
+function barrierIcon(type: string): AppIconName {
+  const icons: Record<string, AppIconName> = {
+    STAIRS: 'ramp',
+    TEMPORARY_CLOSURE: 'close',
+    NARROW_PATH: 'accessible-entrance',
+    VEHICLE_BLOCKING: 'parking',
+    STEEP_SLOPE: 'ramp',
+    ELEVATOR_OUTAGE: 'elevator',
+    ENTRANCE_CLOSED: 'accessible-entrance',
+  };
+  return icons[type] ?? (type === 'CONSTRUCTION' ? 'barrier' : 'warning');
+}
+
+function facilityTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    ACCESSIBLE_ENTRANCE: '无障碍入口',
+    RAMP: '坡道',
+    ELEVATOR: '电梯',
+    ACCESSIBLE_TOILET: '无障碍卫生间',
+    REST_AREA: '休息点',
+    ACCESSIBLE_PARKING: '无障碍停车位',
+    DROP_OFF_POINT: '落客点',
+    TRANSIT_BOARDING_POINT: '公共交通乘车点',
+  };
+  return labels[type] ?? '无障碍设施';
+}
+
+function barrierTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    STAIRS: '楼梯',
+    CONSTRUCTION: '施工',
+    TEMPORARY_CLOSURE: '临时封闭',
+    DAMAGED_SURFACE: '路面破损',
+    NARROW_PATH: '道路狭窄',
+    VEHICLE_BLOCKING: '车辆占道',
+    STEEP_SLOPE: '陡坡',
+    ELEVATOR_OUTAGE: '电梯停运',
+    ENTRANCE_CLOSED: '入口关闭',
+    WATERLOGGING: '积水',
+  };
+  return labels[type] ?? '通行障碍';
+}
+
+function confidenceLabel(level: string): string {
+  return { HIGH: '高可信', MEDIUM: '中可信', LOW: '低可信', UNKNOWN: '未核验' }[level] ?? level;
 }
 
 function addSelectable(
@@ -126,9 +265,13 @@ function renderSnapshot(): void {
     const selected = props.selectedId === building.id;
     const overlay = new api.Polygon({
       path: polygonCoordinates(building.geometry),
-      fillColor: selected ? '#5cb8ce' : '#176b82',
+      fillColor: selected
+        ? cssColor('--color-secondary', '#5cb8ce')
+        : cssColor('--color-primary', '#176b82'),
       fillOpacity: building.active ? 0.18 : 0.06,
-      strokeColor: selected ? '#0b6e99' : '#60756f',
+      strokeColor: selected
+        ? cssColor('--color-focus', '#0b6e99')
+        : cssColor('--color-text-secondary', '#60756f'),
       strokeWeight: selected ? 3 : 1.5,
       strokeStyle: building.active ? 'solid' : 'dashed',
       title: `${building.name} · ${building.confidenceLevel === 'UNKNOWN' ? '未核验' : building.confidenceLevel}`,
@@ -142,7 +285,11 @@ function renderSnapshot(): void {
     const closed = edge.status !== 'ACTIVE';
     const overlay = new api.Polyline({
       path: coordinates(edge.geometry),
-      strokeColor: closed ? '#b42318' : edge.riskLevel === 'UNKNOWN' ? '#667085' : '#0f766e',
+      strokeColor: closed
+        ? cssColor('--color-danger', '#b42318')
+        : edge.riskLevel === 'UNKNOWN'
+          ? cssColor('--color-unknown', '#667085')
+          : cssColor('--color-primary', '#0f766e'),
       strokeWeight: selected ? 7 : 4,
       strokeOpacity: edge.status === 'INACTIVE' ? 0.45 : 0.9,
       strokeStyle: closed || edge.riskLevel === 'UNKNOWN' ? 'dashed' : 'solid',
@@ -177,9 +324,11 @@ function renderSnapshot(): void {
     const overlay = new api.CircleMarker({
       center: [node.lng, node.lat],
       radius: selected ? 8 : 5,
-      fillColor: node.active ? '#0f766e' : '#667085',
+      fillColor: node.active
+        ? cssColor('--color-primary', '#0f766e')
+        : cssColor('--color-unknown', '#667085'),
       fillOpacity: 1,
-      strokeColor: '#ffffff',
+      strokeColor: cssColor('--color-surface', '#ffffff'),
       strokeWeight: selected ? 3 : 2,
       title: `${node.name ?? node.externalId} · ${node.active ? '启用' : '停用'}`,
       zIndex: selected ? 110 : 90,
@@ -190,8 +339,15 @@ function renderSnapshot(): void {
   for (const facility of props.snapshot.facilities) {
     const overlay = new api.Marker({
       position: [facility.lng, facility.lat],
-      content: markerContent('设', 'facility-symbol', `${facility.name}，设施`),
-      offset: new api.Pixel(-14, -14),
+      content: markerContent(
+        facilityIcon(facility.facilityType),
+        '',
+        'facility-symbol',
+        `${facility.name}，${facilityTypeLabel(facility.facilityType)}，${confidenceLabel(facility.confidenceLevel)}`,
+        props.selectedId === facility.id,
+        facility.confidenceLevel,
+      ),
+      offset: new api.Pixel(-17, -17),
       title: `${facility.name} · ${facility.openStatus}`,
       zIndex: props.selectedId === facility.id ? 130 : 100,
     });
@@ -203,8 +359,15 @@ function renderSnapshot(): void {
     const point = barrier.geometry.coordinates as number[];
     const overlay = new api.Marker({
       position: [point[0], point[1]],
-      content: markerContent('障', 'barrier-symbol', `${barrier.title}，障碍`),
-      offset: new api.Pixel(-14, -14),
+      content: markerContent(
+        barrierIcon(barrier.barrierType),
+        '',
+        `barrier-symbol ${barrier.active ? 'is-active' : 'is-pending'}`,
+        `${barrier.title}，${barrierTypeLabel(barrier.barrierType)}，${barrier.active ? '已生效' : '待核验'}`,
+        props.selectedId === barrier.id,
+        barrier.confidenceLevel,
+      ),
+      offset: new api.Pixel(-17, -17),
       title: `${barrier.title} · ${barrier.active ? '已生效' : '待核验'}`,
       zIndex: props.selectedId === barrier.id ? 140 : 120,
     });
@@ -219,7 +382,7 @@ function renderSnapshot(): void {
     if (!node) continue;
     const overlay = new api.Marker({
       position: [node.lng, node.lat],
-      content: markerContent(endpoint.text, endpoint.className, endpoint.label),
+      content: markerContent(null, endpoint.text, endpoint.className, endpoint.label),
       offset: new api.Pixel(-16, -16),
       title: `${endpoint.label}：${node.name ?? node.externalId}`,
       zIndex: 190,
@@ -237,7 +400,11 @@ function renderHeatMap(): void {
     heatMap = new api.HeatMap(map, {
       radius: 28,
       opacity: [0.18, 0.72],
-      gradient: { 0.2: '#5cb8ce', 0.55: '#fdb022', 1: '#b42318' },
+      gradient: {
+        0.2: cssColor('--color-secondary', '#5cb8ce'),
+        0.55: cssColor('--color-warning', '#fdb022'),
+        1: cssColor('--color-danger', '#b42318'),
+      },
     });
   }
   heatMap.setDataSet({
@@ -257,9 +424,11 @@ function routeStyle(profile: RouteResult['profile']): {
   weight: number;
   dashed: boolean;
 } {
-  if (profile === 'ACCESSIBLE') return { color: '#0f766e', weight: 6, dashed: false };
-  if (profile === 'BALANCED') return { color: '#176b82', weight: 4, dashed: false };
-  return { color: '#667085', weight: 4, dashed: true };
+  if (profile === 'ACCESSIBLE')
+    return { color: cssColor('--color-primary', '#0f766e'), weight: 6, dashed: false };
+  if (profile === 'BALANCED')
+    return { color: cssColor('--color-secondary', '#176b82'), weight: 4, dashed: false };
+  return { color: cssColor('--color-unknown', '#667085'), weight: 4, dashed: true };
 }
 
 function profileLabel(profile: RouteResult['profile']): string {
@@ -281,7 +450,7 @@ async function initialize(): Promise<void> {
       version: '2.0',
       plugins: ['AMap.ToolBar', 'AMap.Scale', 'AMap.HeatMap'],
     })) as unknown as AMapApi;
-    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = document.documentElement.dataset.theme === 'dark';
     const center = props.snapshot
       ? [props.snapshot.dataset.centerLng, props.snapshot.dataset.centerLat]
       : [112.9365, 28.1775];
@@ -306,6 +475,16 @@ async function initialize(): Promise<void> {
   }
 }
 
+function handleThemeChange(): void {
+  if (!map) return;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  map.setMapStyle(dark ? 'amap://styles/dark' : 'amap://styles/normal');
+  heatMap?.setMap(null);
+  heatMap = null;
+  renderSnapshot();
+  renderHeatMap();
+}
+
 watch(
   () =>
     [
@@ -328,8 +507,12 @@ watch(
   { deep: true },
 );
 
-onMounted(initialize);
+onMounted(() => {
+  window.addEventListener('theme-change', handleThemeChange);
+  void initialize();
+});
 onBeforeUnmount(() => {
+  window.removeEventListener('theme-change', handleThemeChange);
   heatMap?.setMap(null);
   map?.destroy();
 });
@@ -353,12 +536,25 @@ onBeforeUnmount(() => {
       <span>{{ error }}</span>
       <span>数据管理接口仍可使用，请检查本地高德配置。</span>
     </div>
+    <aside v-if="selectedFeature" class="map-feature-popup" aria-live="polite">
+      <span class="map-feature-popup__icon"><AppIcon :name="selectedFeature.icon" /></span>
+      <span>
+        <small>{{ selectedFeature.kind }}</small>
+        <strong>{{ selectedFeature.title }}</strong>
+        <span>{{ selectedFeature.status }}</span>
+      </span>
+    </aside>
     <div class="map-legend" aria-label="地图图例">
       <span><i class="legend-node" />道路节点</span>
       <span><i class="legend-edge" />启用道路</span>
       <span><i class="legend-edge closed" />封闭/未知</span>
-      <span><i class="legend-symbol facility-symbol">设</i>设施</span>
-      <span><i class="legend-symbol barrier-symbol">障</i>障碍</span>
+      <span
+        ><i class="legend-symbol facility-symbol"><AppIcon name="services" :size="14" /></i
+        >设施</span
+      >
+      <span
+        ><i class="legend-symbol barrier-symbol"><AppIcon name="warning" :size="14" /></i>障碍</span
+      >
       <template v-if="routes.length">
         <span><i class="legend-route shortest" />最短路线</span>
         <span><i class="legend-route accessible" />无障碍优先</span>

@@ -2,8 +2,10 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './App.vue';
 import router from './router';
+import { initializeTheme } from './services/theme';
 import './style.css';
 
+initializeTheme();
 const app = createApp(App);
 window.addEventListener('auth-expired', () => {
   if (router.currentRoute.value.name !== 'login') {

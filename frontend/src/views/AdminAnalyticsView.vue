@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import CampusMap from '../components/CampusMap.vue';
 import EChartPanel from '../components/EChartPanel.vue';
@@ -14,9 +14,11 @@ import {
   type ChartPalette,
 } from '../services/analytics-charts';
 import { readApiMessage } from '../services/http';
+import { useTheme } from '../services/theme';
 import type { AnalyticsFilter, AnalyticsOverview, GovernanceSummary } from '../types/analytics';
 
 const mapData = useMapDataStore();
+const { theme } = useTheme();
 const loading = ref(false);
 const exporting = ref(false);
 const summaryLoading = ref(false);
@@ -24,8 +26,6 @@ const overview = ref<AnalyticsOverview | null>(null);
 const governanceSummary = ref<GovernanceSummary | null>(null);
 const inspectorCollapsed = ref(false);
 const selectedBarrierId = ref<string | null>(null);
-const isDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches);
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
 function isoDate(offsetDays = 0): string {
   const date = new Date();
@@ -57,7 +57,7 @@ const barrierTypes = [
   ['DAMAGED_SURFACE', '路面损坏'],
   ['NARROW_PATH', '道路狭窄'],
   ['VEHICLE_BLOCKING', '车辆占道'],
-  ['STEEP_SLOPE', '陑坡'],
+  ['STEEP_SLOPE', '陡坡'],
   ['ELEVATOR_OUTAGE', '电梯停运'],
   ['ENTRANCE_CLOSED', '入口关闭'],
   ['WATERLOGGING', '积水'],
@@ -87,7 +87,7 @@ const visibleBarrierIds = computed(
 );
 
 const palette = computed<ChartPalette>(() =>
-  isDark.value
+  theme.value === 'dark'
     ? {
         primary: '#36b8a4',
         secondary: '#5cb8ce',
@@ -183,17 +183,11 @@ async function exportCsv(): Promise<void> {
   }
 }
 
-function handleTheme(event: MediaQueryListEvent): void {
-  isDark.value = event.matches;
-}
-
 onMounted(async () => {
-  mediaQuery.addEventListener('change', handleTheme);
   await mapData.load(true);
   filter.datasetId = mapData.selectedDatasetId ?? '';
   await refresh();
 });
-onBeforeUnmount(() => mediaQuery.removeEventListener('change', handleTheme));
 </script>
 
 <template>

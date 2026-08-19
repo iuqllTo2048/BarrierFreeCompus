@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRoute } from 'vue-router';
 import CampusMap from '../components/CampusMap.vue';
+import UiStatePanel from '../components/UiStatePanel.vue';
 import * as businessApi from '../services/business-api';
 import { readApiMessage } from '../services/http';
 import { useMapDataStore } from '../stores/map-data';
@@ -358,9 +359,14 @@ onMounted(async () => {
               }}</small
             >
           </article>
-          <p v-if="!myBarriers.length" class="muted">你还没有提交过障碍信息。</p>
-        </div></el-tab-pane
-      >
+          <UiStatePanel
+            v-if="!myBarriers.length"
+            compact
+            icon="warning"
+            title="还没有障碍上报"
+            description="发现影响通行的情况时，可在“障碍上报”中选择位置并提交。"
+          /></div
+      ></el-tab-pane>
 
       <el-tab-pane label="路线历史" name="history"
         ><div class="record-list">
@@ -377,9 +383,13 @@ onMounted(async () => {
               ><el-button text type="danger" @click="removeHistory(item.id)">删除历史</el-button>
             </div>
           </article>
-          <p v-if="!history.length" class="muted">完成一次路线规划后会自动保存在这里。</p>
-        </div></el-tab-pane
-      >
+          <UiStatePanel
+            v-if="!history.length"
+            compact
+            title="还没有路线历史"
+            description="完成一次路线规划后，路线和风险摘要会自动保存在这里。"
+          /></div
+      ></el-tab-pane>
 
       <el-tab-pane label="收藏路线" name="favorites"
         ><div class="record-list">
@@ -392,9 +402,14 @@ onMounted(async () => {
               <el-button text type="danger" @click="removeFavorite(item.id)">取消收藏</el-button>
             </div>
           </article>
-          <p v-if="!favorites.length" class="muted">暂无收藏路线。</p>
-        </div></el-tab-pane
-      >
+          <UiStatePanel
+            v-if="!favorites.length"
+            compact
+            icon="services"
+            title="还没有收藏路线"
+            description="在路线结果中收藏常用路线，之后可以快速查看。"
+          /></div
+      ></el-tab-pane>
 
       <el-tab-pane label="个人中心" name="profile"
         ><article class="profile-panel">

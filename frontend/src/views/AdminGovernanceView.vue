@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import CampusMap from '../components/CampusMap.vue';
+import AppIcon from '../components/AppIcon.vue';
 import * as businessApi from '../services/business-api';
 import * as agentApi from '../services/agent-api';
 import { readApiMessage } from '../services/http';
@@ -348,7 +349,7 @@ onMounted(loadAll);
               <span v-if="!scope.row.tools.length" class="muted">未调用工具</span>
               <div v-for="tool in scope.row.tools" :key="tool.toolName" class="agent-tool-line">
                 <span :class="tool.success ? 'tool-ok' : 'tool-error'" aria-hidden="true">
-                  {{ tool.success ? '✓' : '!' }}
+                  <AppIcon :name="tool.success ? 'governance' : 'warning'" :size="15" />
                 </span>
                 {{ tool.toolName }} · {{ tool.latencyMs }} ms
               </div>
