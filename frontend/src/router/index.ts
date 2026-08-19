@@ -8,6 +8,7 @@ const AdminDashboardView = () => import('../views/AdminDashboardView.vue');
 const UserServicesView = () => import('../views/UserServicesView.vue');
 const UserAssistantView = () => import('../views/UserAssistantView.vue');
 const AdminGovernanceView = () => import('../views/AdminGovernanceView.vue');
+const AdminAnalyticsView = () => import('../views/AdminAnalyticsView.vue');
 const AppShell = () => import('../layouts/AppShell.vue');
 
 declare module 'vue-router' {
@@ -54,6 +55,12 @@ const router = createRouter({
           path: 'admin/governance',
           name: 'admin-governance',
           component: AdminGovernanceView,
+          meta: { roles: ['ADMIN'] },
+        },
+        {
+          path: 'admin/analytics',
+          name: 'admin-analytics',
+          component: AdminAnalyticsView,
           meta: { roles: ['ADMIN'] },
         },
       ],

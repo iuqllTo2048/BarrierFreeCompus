@@ -1,4 +1,4 @@
-# API.md — v0.2.0 接口
+# API.md — v0.6.0 接口
 
 统一响应为 `{ "code": 0, "message": "成功", "data": ... }`；错误同时使用真实 HTTP 状态码且不暴露堆栈或密钥。认证仍使用 Bearer Access Token 和 HttpOnly Refresh Cookie。
 
@@ -37,3 +37,15 @@
 - 健康检查：`GET /actuator/health`
 - Swagger：`/swagger-ui.html`
 - OpenAPI JSON：`/v3/api-docs`
+
+## 治理洞察
+
+所有接口前缀为 `/api/admin/analytics`，仅 ADMIN 可访问。通用查询参数为 `datasetId`、`buildingId`、`from`、`to`、`facilityType`、`barrierType`、`confidenceLevel`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/overview` | 返回概要、建筑评分、设施分布、障碍空间/趋势、路线风险和可信度 |
+| GET | `/export.csv` | 导出当前筛选统计的 UTF-8 BOM CSV |
+| POST | `/ai-summary` | AI 开启时解释已计算结果；关闭或失败时返回规则摘要 |
+
+统计口径详见 `docs/ANALYTICS_METRICS.md`。

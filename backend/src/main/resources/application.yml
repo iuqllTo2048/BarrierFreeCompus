@@ -31,3 +31,12 @@ app:
     base-url: ${AI_BASE_URL:}
     api-key: ${AI_API_KEY:}
     model-name: ${AI_MODEL_NAME:}
+  analytics:
+    building-score:
+      accessible-entrance: 20
+      elevator: 15
+      accessible-toilet: 15
+      road-accessibility: 25
+      barrier-impact: 15
+      data-completeness: 10
+      proximity-meters: 100

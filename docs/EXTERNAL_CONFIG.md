@@ -56,3 +56,7 @@ AI_MODEL_NAME=deepseek-v4-flash
 业务 Tool 和应用服务不依赖 DeepSeek。外部模型超时或限流时，后端会保留已完成的白名单 Tool 和 A* 路线结果，通过 SSE 标记降级，不影响手工路线功能。切换其他 OpenAI-compatible Provider 后仍需验证流式行为。
 
 后端禁用 LangChain4j 原始请求/响应日志，Key 不进入数据库、SSE、管理端日志或 Git。v1.0 不使用 OSS。
+
+## Stage 6 治理洞察配置
+
+Stage 6 不新增外部服务或 Key。建筑评分权重和空间半径在 `application.yml` 的 `app.analytics.building-score` 中集中管理，默认总权重必须为 100，不通过前端修改。AI 治理建议沿用 Stage 5 的 `AI_*` 配置；即使 AI 关闭，基础统计和 CSV 仍可用。

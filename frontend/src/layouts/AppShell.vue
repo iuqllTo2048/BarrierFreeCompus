@@ -25,6 +25,7 @@ async function signOut(): Promise<void> {
         <RouterLink to="/user/assistant"> 智能路线助手 </RouterLink>
         <RouterLink v-if="auth.role === 'ADMIN'" to="/admin"> 地图数据 </RouterLink>
         <RouterLink v-if="auth.role === 'ADMIN'" to="/admin/governance"> 治理工作台 </RouterLink>
+        <RouterLink v-if="auth.role === 'ADMIN'" to="/admin/analytics"> 治理洞察 </RouterLink>
       </nav>
       <div class="account">
         <span>{{ auth.username }} · {{ roleLabel }}</span>

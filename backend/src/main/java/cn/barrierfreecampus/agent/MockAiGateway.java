@@ -10,4 +10,9 @@ public class MockAiGateway implements AiGateway {
     public String explain(String factualContext) {
         return factualContext;
     }
+
+    @Override
+    public String summarizeGovernance(String factualContext) {
+        return factualContext;
+    }
 }

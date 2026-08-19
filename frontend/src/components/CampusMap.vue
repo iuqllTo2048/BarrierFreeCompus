@@ -21,7 +21,17 @@ interface MapInstance {
   add(overlays: unknown[]): void;
   remove(overlays: unknown[]): void;
   setFitView(overlays?: unknown[], immediately?: boolean, avoid?: number[]): void;
+  setCenter(center: [number, number], immediately?: boolean): void;
+  setZoom(zoom: number, immediately?: boolean): void;
   destroy(): void;
+}
+
+interface HeatMapInstance {
+  setDataSet(dataSet: {
+    data: Array<{ lng: number; lat: number; count: number }>;
+    max: number;
+  }): void;
+  setMap(map: MapInstance | null): void;
 }
 
 interface AMapApi {
@@ -36,6 +46,7 @@ interface AMapApi {
   Pixel: new (x: number, y: number) => unknown;
   ToolBar: new (options?: Record<string, unknown>) => unknown;
   Scale: new (options?: Record<string, unknown>) => unknown;
+  HeatMap: new (map: MapInstance, options?: Record<string, unknown>) => HeatMapInstance;
 }
 
 const props = withDefaults(
@@ -47,6 +58,9 @@ const props = withDefaults(
     selectedRouteIndex?: number;
     startNodeId?: string | null;
     endNodeId?: string | null;
+    heatPoints?: Array<{ lng: number; lat: number; count: number }>;
+    focusCoordinate?: Coordinate | null;
+    visibleBarrierIds?: string[] | null;
   }>(),
   {
     editable: false,
@@ -55,6 +69,9 @@ const props = withDefaults(
     selectedRouteIndex: 0,
     startNodeId: null,
     endNodeId: null,
+    heatPoints: () => [],
+    focusCoordinate: null,
+    visibleBarrierIds: null,
   },
 );
 
@@ -72,6 +89,7 @@ const configured = computed(() => Boolean(import.meta.env.VITE_AMAP_JS_KEY));
 let api: AMapApi | null = null;
 let map: MapInstance | null = null;
 let overlays: unknown[] = [];
+let heatMap: HeatMapInstance | null = null;
 
 function coordinates(geometry: GeoJsonGeometry): number[][] {
   return geometry.coordinates as number[][];
@@ -181,6 +199,7 @@ function renderSnapshot(): void {
   }
 
   for (const barrier of props.snapshot.barriers) {
+    if (props.visibleBarrierIds && !props.visibleBarrierIds.includes(barrier.id)) continue;
     const point = barrier.geometry.coordinates as number[];
     const overlay = new api.Marker({
       position: [point[0], point[1]],
@@ -212,6 +231,27 @@ function renderSnapshot(): void {
   if (overlays.length) map.setFitView(overlays, false, [48, 48, 48, 48]);
 }
 
+function renderHeatMap(): void {
+  if (!map || !api) return;
+  if (!heatMap) {
+    heatMap = new api.HeatMap(map, {
+      radius: 28,
+      opacity: [0.18, 0.72],
+      gradient: { 0.2: '#5cb8ce', 0.55: '#fdb022', 1: '#b42318' },
+    });
+  }
+  heatMap.setDataSet({
+    data: props.heatPoints,
+    max: Math.max(1, ...props.heatPoints.map((item) => item.count)),
+  });
+}
+
+function focusMap(): void {
+  if (!map || !props.focusCoordinate) return;
+  map.setCenter([props.focusCoordinate.lng, props.focusCoordinate.lat], true);
+  map.setZoom(18, true);
+}
+
 function routeStyle(profile: RouteResult['profile']): {
   color: string;
   weight: number;
@@ -239,7 +279,7 @@ async function initialize(): Promise<void> {
     api = (await AMapLoader.load({
       key: import.meta.env.VITE_AMAP_JS_KEY,
       version: '2.0',
-      plugins: ['AMap.ToolBar', 'AMap.Scale'],
+      plugins: ['AMap.ToolBar', 'AMap.Scale', 'AMap.HeatMap'],
     })) as unknown as AMapApi;
     const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const center = props.snapshot
@@ -257,6 +297,8 @@ async function initialize(): Promise<void> {
         emit('mapClick', { lng: event.lnglat.getLng(), lat: event.lnglat.getLat() });
     });
     renderSnapshot();
+    renderHeatMap();
+    focusMap();
   } catch (reason: unknown) {
     error.value = reason instanceof Error ? reason.message : '高德地图加载失败';
   } finally {
@@ -273,13 +315,24 @@ watch(
       props.selectedRouteIndex,
       props.startNodeId,
       props.endNodeId,
+      props.heatPoints,
+      props.focusCoordinate,
+      props.visibleBarrierIds,
     ] as const,
-  () => nextTick(renderSnapshot),
+  () =>
+    nextTick(() => {
+      renderSnapshot();
+      renderHeatMap();
+      focusMap();
+    }),
   { deep: true },
 );
 
 onMounted(initialize);
-onBeforeUnmount(() => map?.destroy());
+onBeforeUnmount(() => {
+  heatMap?.setMap(null);
+  map?.destroy();
+});
 </script>
 
 <template>

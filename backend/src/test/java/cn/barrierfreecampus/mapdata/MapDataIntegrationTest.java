@@ -21,7 +21,12 @@ import cn.barrierfreecampus.agent.AgentRepository;
 import cn.barrierfreecampus.agent.AgentTools;
 import cn.barrierfreecampus.agent.AiProperties;
 import cn.barrierfreecampus.agent.AgentExecutionContext;
+import cn.barrierfreecampus.analytics.AnalyticsDtos;
+import cn.barrierfreecampus.analytics.AnalyticsFilter;
+import cn.barrierfreecampus.analytics.AnalyticsService;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -95,6 +100,9 @@ class MapDataIntegrationTest {
 
     @Autowired
     private AiProperties aiProperties;
+
+    @Autowired
+    private AnalyticsService analyticsService;
 
     @Test
     void shouldMigrateSeedAndQueryGcj02SpatialData() {
@@ -524,6 +532,87 @@ class MapDataIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:route_result")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:done")));
+    }
+
+    @Test
+    void shouldCalculateSixAnalyticsViewsWithDocumentedBuildingWeights() {
+        AnalyticsDtos.AnalyticsOverview overview = analyticsService.overview(analyticsFilter());
+
+        assertThat(overview.summary().buildings()).isEqualTo(5);
+        assertThat(overview.summary().facilities()).isEqualTo(15);
+        assertThat(overview.buildingScores()).hasSize(5).allSatisfy(score -> {
+            assertThat(score.score()).isBetween(0.0, 100.0);
+            assertThat(score.entranceScore() + score.elevatorScore() + score.toiletScore()
+                    + score.roadScore() + score.barrierScore() + score.completenessScore())
+                    .isCloseTo(score.score(), org.assertj.core.data.Offset.offset(0.3));
+        });
+        assertThat(overview.facilityDistribution()).isNotEmpty();
+        assertThat(overview.barrierTrend()).hasSize(30);
+        assertThat(overview.confidenceDistribution()).extracting(AnalyticsDtos.ConfidenceDistribution::entityType)
+                .containsExactly("BUILDING", "ENTRANCE", "EDGE", "FACILITY", "BARRIER");
+    }
+
+    @Test
+    void shouldAggregateRealRouteHistoryAndApplyAnalyticsFilters() {
+        RoutingDtos.RoutePlanRequest request = routeRequest(
+                NODE_2, NODE_3, RoutingDtos.MobilityMode.WALKING, RoutingDtos.RoutePreferences.defaults());
+        RoutingDtos.RoutePlanResponse result = routingService.plan(request);
+        businessService.recordHistory("demo_user", request, result);
+
+        AnalyticsDtos.AnalyticsOverview overview = analyticsService.overview(new AnalyticsFilter(
+                DEMO_DATASET_ID, null, LocalDate.now().minusDays(1), LocalDate.now(),
+                "RAMP", null, "UNKNOWN"));
+
+        assertThat(overview.facilityDistribution()).allSatisfy(item -> assertThat(item.key()).isEqualTo("RAMP"));
+        assertThat(overview.routeRisks()).isNotEmpty().allSatisfy(item -> {
+            assertThat(item.sampleCount()).isPositive();
+            assertThat(item.averageDistanceM()).isNotNegative();
+        });
+        assertThat(overview.confidenceDistribution()).allSatisfy(item -> {
+            assertThat(item.high()).isZero();
+            assertThat(item.medium()).isZero();
+            assertThat(item.low()).isZero();
+        });
+    }
+
+    @Test
+    void shouldExportSafeUtf8CsvAndUseRuleSummaryWhenAiDisabled() {
+        UUID buildingId = UUID.fromString("31000000-0000-0000-0000-000000000099");
+        jdbcTemplate.update(
+                """
+                INSERT INTO building(id,dataset_id,external_id,name,category,data_source,confidence_level,geom)
+                VALUES (?,?,'BLD-CSV','=1+1','OTHER','UNVERIFIED','UNKNOWN',
+                  ST_GeomFromText('POLYGON((112.939 28.179,112.9391 28.179,112.9391 28.1791,112.939 28.1791,112.939 28.179))',0))
+                """, buildingId, DEMO_DATASET_ID);
+        AnalyticsFilter filter = new AnalyticsFilter(DEMO_DATASET_ID, buildingId,
+                LocalDate.now().minusDays(29), LocalDate.now(), null, null, null);
+
+        String csv = new String(analyticsService.csv(filter), StandardCharsets.UTF_8);
+        AnalyticsDtos.GovernanceSummary summary = analyticsService.governanceSummary(filter);
+
+        assertThat(csv).startsWith("\uFEFF").contains("'=1+1").contains("建筑评分");
+        assertThat(summary.aiEnabled()).isFalse();
+        assertThat(summary.generatedBy()).isEqualTo("RULES");
+        assertThat(summary.text()).isNotBlank();
+    }
+
+    @Test
+    void analyticsApiMustRequireAdminAndRejectInvalidDateRange() throws Exception {
+        String url = "/api/admin/analytics/overview?datasetId=" + DEMO_DATASET_ID;
+        mockMvc.perform(get(url).with(user("demo_user").roles("USER")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(url).with(user("demo_admin").roles("ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.buildingScores.length()").value(5));
+        mockMvc.perform(get(url + "&from=2026-08-20&to=2026-08-01")
+                        .with(user("demo_admin").roles("ADMIN")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("开始日期不能晚于结束日期"));
+    }
+
+    private AnalyticsFilter analyticsFilter() {
+        return new AnalyticsFilter(DEMO_DATASET_ID, null, LocalDate.now().minusDays(29),
+                LocalDate.now(), null, null, null);
     }
 
     private RoutingDtos.RoutePlanRequest routeRequest(
