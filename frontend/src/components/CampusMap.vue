@@ -11,6 +11,7 @@ import {
   facilityTypeLabel,
   profileLabel,
 } from '../services/map-visuals';
+import { DEFAULT_CAMPUS_CENTER } from '../services/map-geometry';
 import type { Coordinate, GeoJsonGeometry, MapSnapshot, RouteResult } from '../types/map';
 
 interface LngLatValue {
@@ -24,6 +25,17 @@ interface MapClickEvent {
 
 interface SelectableOverlay {
   on(event: 'click', handler: () => void): void;
+}
+
+interface EditablePolyline extends SelectableOverlay {
+  getPath(): LngLatValue[];
+  setPath(path: Array<[number, number]>): void;
+}
+
+interface PolylineEditorInstance {
+  on(event: 'addnode' | 'adjust' | 'removenode', handler: () => void): void;
+  open(): void;
+  close(): void;
 }
 
 interface MapInstance {
@@ -51,13 +63,18 @@ interface AMapApi {
     options: { center: [number, number]; zoom: number; viewMode: string; mapStyle?: string },
   ) => MapInstance;
   Polygon: new (options: Record<string, unknown>) => SelectableOverlay;
-  Polyline: new (options: Record<string, unknown>) => SelectableOverlay;
+  Polyline: new (options: Record<string, unknown>) => EditablePolyline;
   CircleMarker: new (options: Record<string, unknown>) => SelectableOverlay;
   Marker: new (options: Record<string, unknown>) => SelectableOverlay;
   Pixel: new (x: number, y: number) => unknown;
   ToolBar: new (options?: Record<string, unknown>) => unknown;
   Scale: new (options?: Record<string, unknown>) => unknown;
   HeatMap: new (map: MapInstance, options?: Record<string, unknown>) => HeatMapInstance;
+  PolylineEditor: new (
+    map: MapInstance,
+    polyline?: EditablePolyline,
+    options?: Record<string, unknown>,
+  ) => PolylineEditorInstance;
 }
 
 const props = withDefaults(
@@ -72,6 +89,10 @@ const props = withDefaults(
     heatPoints?: Array<{ lng: number; lat: number; count: number }>;
     focusCoordinate?: Coordinate | null;
     visibleBarrierIds?: string[] | null;
+    draftCoordinate?: Coordinate | null;
+    editPath?: Coordinate[];
+    pathEditorOpen?: boolean;
+    editingInstruction?: string;
   }>(),
   {
     editable: false,
@@ -83,6 +104,10 @@ const props = withDefaults(
     heatPoints: () => [],
     focusCoordinate: null,
     visibleBarrierIds: null,
+    draftCoordinate: null,
+    editPath: () => [],
+    pathEditorOpen: false,
+    editingInstruction: '',
   },
 );
 
@@ -91,6 +116,7 @@ const emit = defineEmits<{
   featureSelect: [
     selection: { kind: 'node' | 'edge' | 'facility' | 'barrier' | 'building'; id: string },
   ];
+  pathChange: [path: Coordinate[]];
 }>();
 
 const container = ref<HTMLElement | null>(null);
@@ -144,7 +170,10 @@ const selectedFeature = computed(() => {
 let api: AMapApi | null = null;
 let map: MapInstance | null = null;
 let overlays: unknown[] = [];
+let editingOverlays: unknown[] = [];
 let heatMap: HeatMapInstance | null = null;
+let polylineEditor: PolylineEditorInstance | null = null;
+let fittedDatasetId: string | null = null;
 
 function coordinates(geometry: GeoJsonGeometry): number[][] {
   return geometry.coordinates as number[][];
@@ -338,7 +367,77 @@ function renderSnapshot(): void {
   }
 
   map.add(overlays);
-  if (overlays.length) map.setFitView(overlays, false, [48, 48, 48, 48]);
+  if (fittedDatasetId !== props.snapshot.dataset.id) {
+    if (overlays.length) map.setFitView(overlays, false, [48, 48, 48, 48]);
+    else {
+      map.setCenter([props.snapshot.dataset.centerLng, props.snapshot.dataset.centerLat], true);
+      map.setZoom(17, true);
+    }
+    fittedDatasetId = props.snapshot.dataset.id;
+  }
+}
+
+function clearEditingOverlays(): void {
+  polylineEditor?.close();
+  polylineEditor = null;
+  if (map && editingOverlays.length) map.remove(editingOverlays);
+  editingOverlays = [];
+}
+
+function renderEditingOverlays(): void {
+  if (!map || !api) return;
+  clearEditingOverlays();
+
+  if (props.draftCoordinate) {
+    const marker = document.createElement('span');
+    marker.className = 'map-pick-marker';
+    marker.setAttribute('aria-hidden', 'true');
+    const overlay = new api.Marker({
+      position: [props.draftCoordinate.lng, props.draftCoordinate.lat],
+      content: marker,
+      offset: new api.Pixel(-12, -12),
+      zIndex: 220,
+    });
+    editingOverlays.push(overlay);
+  }
+
+  if (props.editPath.length >= 2) {
+    const editableLine = new api.Polyline({
+      path: props.editPath.map((point) => [point.lng, point.lat]),
+      strokeColor: cssColor('--color-secondary', '#176b82'),
+      strokeWeight: 6,
+      strokeOpacity: 0.95,
+      strokeStyle: 'solid',
+      lineJoin: 'round',
+      lineCap: 'round',
+      zIndex: 210,
+    });
+    editingOverlays.push(editableLine);
+    map.add(editingOverlays);
+
+    if (props.pathEditorOpen) {
+      polylineEditor = new api.PolylineEditor(map, editableLine);
+      const syncPath = (): void => {
+        const raw = editableLine.getPath().map((point) => ({
+          lng: point.getLng(),
+          lat: point.getLat(),
+        }));
+        const start = props.editPath[0];
+        const end = props.editPath.at(-1);
+        if (!start || !end || raw.length < 2) return;
+        const locked = [start, ...raw.slice(1, -1), end];
+        editableLine.setPath(locked.map((point) => [point.lng, point.lat]));
+        emit('pathChange', locked);
+      };
+      polylineEditor.on('addnode', syncPath);
+      polylineEditor.on('adjust', syncPath);
+      polylineEditor.on('removenode', syncPath);
+      polylineEditor.open();
+    }
+    return;
+  }
+
+  if (editingOverlays.length) map.add(editingOverlays);
 }
 
 function renderHeatMap(): void {
@@ -389,12 +488,12 @@ async function initialize(): Promise<void> {
     api = (await AMapLoader.load({
       key: import.meta.env.VITE_AMAP_JS_KEY,
       version: '2.0',
-      plugins: ['AMap.ToolBar', 'AMap.Scale', 'AMap.HeatMap'],
+      plugins: ['AMap.ToolBar', 'AMap.Scale', 'AMap.HeatMap', 'AMap.PolylineEditor'],
     })) as unknown as AMapApi;
     const dark = document.documentElement.dataset.theme === 'dark';
     const center = props.snapshot
       ? [props.snapshot.dataset.centerLng, props.snapshot.dataset.centerLat]
-      : [112.9365, 28.1775];
+      : [DEFAULT_CAMPUS_CENTER.lng, DEFAULT_CAMPUS_CENTER.lat];
     map = new api.Map(container.value, {
       center: center as [number, number],
       zoom: 17,
@@ -407,6 +506,7 @@ async function initialize(): Promise<void> {
         emit('mapClick', { lng: event.lnglat.getLng(), lat: event.lnglat.getLat() });
     });
     renderSnapshot();
+    renderEditingOverlays();
     renderHeatMap();
     focusMap();
   } catch (reason: unknown) {
@@ -423,6 +523,7 @@ function handleThemeChange(): void {
   heatMap?.setMap(null);
   heatMap = null;
   renderSnapshot();
+  renderEditingOverlays();
   renderHeatMap();
 }
 
@@ -448,6 +549,12 @@ watch(
   { deep: true },
 );
 
+watch(
+  () => [props.draftCoordinate, props.editPath, props.pathEditorOpen] as const,
+  () => nextTick(renderEditingOverlays),
+  { deep: true },
+);
+
 onMounted(() => {
   window.addEventListener('theme-change', handleThemeChange);
   void initialize();
@@ -455,6 +562,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('theme-change', handleThemeChange);
   heatMap?.setMap(null);
+  clearEditingOverlays();
   map?.destroy();
 });
 </script>
@@ -465,7 +573,7 @@ onBeforeUnmount(() => {
       ref="container"
       class="amap-container"
       role="application"
-      aria-label="云麓校园地图；地图对象也可通过相邻列表和表单操作"
+      :aria-label="`${snapshot?.dataset.name ?? '学校示例校园'}地图；地图对象也可通过相邻列表和表单操作`"
     />
     <div v-if="loading" class="map-state map-loading-state" role="status">
       <span class="map-loading-line" aria-hidden="true" />
@@ -485,6 +593,9 @@ onBeforeUnmount(() => {
         <span>{{ selectedFeature.status }}</span>
       </span>
     </aside>
+    <div v-if="editingInstruction" class="map-editing-instruction" role="status">
+      {{ editingInstruction }}
+    </div>
     <div class="map-legend" aria-label="地图图例">
       <span><i class="legend-node" />道路节点</span>
       <span><i class="legend-edge" />启用道路</span>

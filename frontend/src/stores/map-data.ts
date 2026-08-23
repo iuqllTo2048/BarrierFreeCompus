@@ -23,7 +23,8 @@ export const useMapDataStore = defineStore('map-data', () => {
         !selectedDatasetId.value ||
         !datasets.value.some((item) => item.id === selectedDatasetId.value)
       ) {
-        selectedDatasetId.value = datasets.value[0]?.id ?? null;
+        selectedDatasetId.value =
+          datasets.value.find((dataset) => dataset.enabled)?.id ?? datasets.value[0]?.id ?? null;
       }
       await refresh(admin);
     } catch (reason: unknown) {

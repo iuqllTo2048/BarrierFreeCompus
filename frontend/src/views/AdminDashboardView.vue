@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import CampusMap from '../components/CampusMap.vue';
 import { useMapDataStore } from '../stores/map-data';
 import * as mapApi from '../services/map-api';
 import { readApiMessage } from '../services/http';
+import { DEFAULT_CAMPUS_CENTER, pathDistanceMeters } from '../services/map-geometry';
 import type { Coordinate, EdgeRequest, NodeRequest } from '../types/map';
 
 type EditMode = 'SELECT' | 'NODE' | 'EDGE' | 'BUILDING' | 'ENTRANCE' | 'FACILITY' | 'BARRIER';
@@ -17,13 +18,17 @@ const editingId = ref<string | null>(null);
 const saving = ref(false);
 const edgeNodeHint = ref('请选择第一个道路节点');
 const fileInput = ref<HTMLInputElement | null>(null);
+const edgePoints = ref<Coordinate[]>([]);
+const edgeHistory = ref<Coordinate[][]>([]);
+const pathEditorOpen = ref(false);
+const placementMessage = ref('');
 
 const nodeForm = reactive<NodeRequest>({
   externalId: '',
   name: '',
   nodeType: 'INTERSECTION',
   active: true,
-  coordinate: { lng: 112.9365, lat: 28.1775 },
+  coordinate: { ...DEFAULT_CAMPUS_CENTER },
 });
 
 const edgeForm = reactive<EdgeRequest>({
@@ -43,8 +48,6 @@ const edgeForm = reactive<EdgeRequest>({
   riskLevel: 'UNKNOWN',
   intermediatePoints: [],
 });
-const intermediateText = ref('');
-
 const pointForm = reactive({
   externalId: '',
   name: '',
@@ -59,7 +62,38 @@ const pointForm = reactive({
   barrierType: 'CONSTRUCTION',
   reviewStatus: 'PENDING',
   active: true,
-  coordinate: { lng: 112.9365, lat: 28.1775 } as Coordinate,
+  coordinate: { ...DEFAULT_CAMPUS_CENTER } as Coordinate,
+});
+
+const startNode = computed(() =>
+  mapData.snapshot?.nodes.find((item) => item.id === edgeForm.fromNodeId),
+);
+const endNode = computed(() =>
+  mapData.snapshot?.nodes.find((item) => item.id === edgeForm.toNodeId),
+);
+const edgePath = computed<Coordinate[]>(() => {
+  if (!startNode.value) return [];
+  const path: Coordinate[] = [
+    { lng: startNode.value.lng, lat: startNode.value.lat },
+    ...edgePoints.value,
+  ];
+  if (endNode.value) path.push({ lng: endNode.value.lng, lat: endNode.value.lat });
+  return path;
+});
+const draftCoordinate = computed<Coordinate | null>(() => {
+  if (mode.value === 'NODE') return nodeForm.coordinate;
+  if (['BUILDING', 'ENTRANCE', 'FACILITY', 'BARRIER'].includes(mode.value)) {
+    return pointForm.coordinate;
+  }
+  return mode.value === 'EDGE' ? (edgePoints.value.at(-1) ?? null) : null;
+});
+const editingInstruction = computed(() => {
+  if (mode.value === 'EDGE') return edgeNodeHint.value;
+  if (mode.value === 'NODE') return '点击地图设置道路节点位置，也可以在检查器中精确输入坐标';
+  if (['BUILDING', 'ENTRANCE', 'FACILITY', 'BARRIER'].includes(mode.value)) {
+    return `点击地图设置${modeLabel(mode.value)}位置，也可以在检查器中精确输入坐标`;
+  }
+  return '';
 });
 
 const selectionOptions = computed(() => {
@@ -103,6 +137,8 @@ function beginMode(next: EditMode): void {
   mode.value = next;
   selectedId.value = null;
   editingId.value = null;
+  placementMessage.value = '';
+  if (next !== 'EDGE') pathEditorOpen.value = false;
   if (next === 'NODE') {
     Object.assign(nodeForm, {
       externalId: uniqueExternalId('N-MAN'),
@@ -110,8 +146,8 @@ function beginMode(next: EditMode): void {
       nodeType: 'INTERSECTION',
       active: true,
       coordinate: {
-        lng: mapData.selectedDataset?.centerLng ?? 112.9365,
-        lat: mapData.selectedDataset?.centerLat ?? 28.1775,
+        lng: mapData.selectedDataset?.centerLng ?? DEFAULT_CAMPUS_CENTER.lng,
+        lat: mapData.selectedDataset?.centerLat ?? DEFAULT_CAMPUS_CENTER.lat,
       },
     });
   } else if (next === 'EDGE') {
@@ -132,7 +168,9 @@ function beginMode(next: EditMode): void {
       riskLevel: 'UNKNOWN',
       intermediatePoints: [],
     });
-    intermediateText.value = '';
+    edgePoints.value = [];
+    edgeHistory.value = [];
+    pathEditorOpen.value = false;
     edgeNodeHint.value = '请选择第一个道路节点';
   } else if (next !== 'SELECT') {
     Object.assign(pointForm, {
@@ -141,8 +179,8 @@ function beginMode(next: EditMode): void {
       description: '',
       active: true,
       coordinate: {
-        lng: mapData.selectedDataset?.centerLng ?? 112.9365,
-        lat: mapData.selectedDataset?.centerLat ?? 28.1775,
+        lng: mapData.selectedDataset?.centerLng ?? DEFAULT_CAMPUS_CENTER.lng,
+        lat: mapData.selectedDataset?.centerLat ?? DEFAULT_CAMPUS_CENTER.lat,
       },
     });
   }
@@ -161,21 +199,128 @@ function modeLabel(value: EditMode): string {
 }
 
 function mapClick(coordinate: Coordinate): void {
-  if (mode.value === 'NODE') nodeForm.coordinate = coordinate;
+  if (mode.value === 'EDGE' && edgeForm.fromNodeId && !edgeForm.toNodeId) {
+    rememberEdgePoints();
+    edgePoints.value.push(coordinate);
+    placementMessage.value = `已添加第 ${edgePoints.value.length} 个道路拐点：${formatCoordinate(coordinate)}`;
+    edgeNodeHint.value = '继续点击添加拐点，或点击另一个已有节点作为终点';
+    return;
+  }
+  if (mode.value === 'NODE') {
+    nodeForm.coordinate = coordinate;
+    placementMessage.value = `已设置道路节点位置：${formatCoordinate(coordinate)}`;
+  }
   if (['BUILDING', 'ENTRANCE', 'FACILITY', 'BARRIER'].includes(mode.value)) {
     pointForm.coordinate = coordinate;
+    placementMessage.value = `已设置${modeLabel(mode.value)}位置：${formatCoordinate(coordinate)}`;
   }
 }
 
-function haversineMeters(first: Coordinate, second: Coordinate): number {
-  const radians = (degrees: number): number => (degrees * Math.PI) / 180;
-  const earthRadius = 6_371_000;
-  const deltaLat = radians(second.lat - first.lat);
-  const deltaLng = radians(second.lng - first.lng);
-  const a =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(radians(first.lat)) * Math.cos(radians(second.lat)) * Math.sin(deltaLng / 2) ** 2;
-  return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+function formatCoordinate(coordinate: Coordinate): string {
+  return `${coordinate.lng.toFixed(6)}, ${coordinate.lat.toFixed(6)}`;
+}
+
+function rememberEdgePoints(): void {
+  edgeHistory.value.push(edgePoints.value.map((point) => ({ ...point })));
+  if (edgeHistory.value.length > 50) edgeHistory.value.shift();
+}
+
+function setEdgePoints(points: Coordinate[], remember = true): void {
+  if (JSON.stringify(points) === JSON.stringify(edgePoints.value)) return;
+  if (remember) rememberEdgePoints();
+  edgePoints.value = points.map((point) => ({ ...point }));
+}
+
+function selectEdgeStart(nodeId: string): void {
+  if (nodeId === edgeForm.toNodeId) edgeForm.toNodeId = '';
+  edgeForm.fromNodeId = nodeId;
+  edgePoints.value = [];
+  edgeHistory.value = [];
+  pathEditorOpen.value = false;
+  edgeNodeHint.value = '已选择起点；点击地图添加拐点，或点击另一个已有节点作为终点';
+}
+
+function selectEdgeEnd(nodeId: string): void {
+  if (!edgeForm.fromNodeId) {
+    edgeNodeHint.value = '请先选择道路起点';
+    return;
+  }
+  if (nodeId === edgeForm.fromNodeId) {
+    edgeForm.toNodeId = '';
+    ElMessage.warning('道路起点和终点不能相同');
+    return;
+  }
+  edgeForm.toNodeId = nodeId;
+  pathEditorOpen.value = true;
+  edgeNodeHint.value = '折线已生成；可拖动、增删拐点，完成后保存道路';
+}
+
+function handlePathChange(path: Coordinate[]): void {
+  if (path.length < 2) return;
+  setEdgePoints(path.slice(1, -1));
+}
+
+function undoEdgePath(): void {
+  const previous = edgeHistory.value.pop();
+  if (!previous) return;
+  edgePoints.value = previous;
+  placementMessage.value = `已撤销，当前 ${edgePoints.value.length} 个拐点`;
+}
+
+function resetEdgePath(): void {
+  setEdgePoints([]);
+  placementMessage.value = '已重置为起终点直线';
+}
+
+function addEdgePoint(): void {
+  if (!startNode.value) return;
+  const previous = edgePoints.value.at(-1) ?? {
+    lng: startNode.value.lng,
+    lat: startNode.value.lat,
+  };
+  const target = endNode.value
+    ? { lng: endNode.value.lng, lat: endNode.value.lat }
+    : { lng: previous.lng + 0.0001, lat: previous.lat + 0.0001 };
+  rememberEdgePoints();
+  edgePoints.value.push({
+    lng: (previous.lng + target.lng) / 2,
+    lat: (previous.lat + target.lat) / 2,
+  });
+}
+
+function removeEdgePoint(index: number): void {
+  rememberEdgePoints();
+  edgePoints.value.splice(index, 1);
+}
+
+function moveEdgePoint(index: number, direction: -1 | 1): void {
+  const target = index + direction;
+  if (target < 0 || target >= edgePoints.value.length) return;
+  rememberEdgePoints();
+  const points = [...edgePoints.value];
+  [points[index], points[target]] = [points[target], points[index]];
+  edgePoints.value = points;
+}
+
+function finishPathEditing(): void {
+  pathEditorOpen.value = false;
+  edgeNodeHint.value = '线路形状已确认；填写道路属性后保存';
+}
+
+function handleEditorKeyboard(event: KeyboardEvent): void {
+  if (mode.value !== 'EDGE') return;
+  const target = event.target as HTMLElement | null;
+  const editingInput = target?.matches('input, textarea, [contenteditable="true"]');
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !editingInput) {
+    event.preventDefault();
+    undoEdgePath();
+  } else if (event.key === 'Enter' && pathEditorOpen.value && !editingInput) {
+    event.preventDefault();
+    finishPathEditing();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    beginMode('SELECT');
+  }
 }
 
 function selectFeature(selection: { kind: FeatureKind; id: string }): void {
@@ -184,14 +329,10 @@ function selectFeature(selection: { kind: FeatureKind; id: string }): void {
   if (!snapshot) return;
   if (mode.value === 'EDGE' && !editingId.value && selection.kind === 'node') {
     if (!edgeForm.fromNodeId) {
-      edgeForm.fromNodeId = selection.id;
+      selectEdgeStart(selection.id);
       edgeNodeHint.value = '已选择起点，请选择第二个道路节点';
     } else if (selection.id !== edgeForm.fromNodeId) {
-      edgeForm.toNodeId = selection.id;
-      const start = snapshot.nodes.find((item) => item.id === edgeForm.fromNodeId);
-      const end = snapshot.nodes.find((item) => item.id === edgeForm.toNodeId);
-      if (start && end) edgeForm.distanceM = haversineMeters(start, end);
-      edgeNodeHint.value = '起终点已选择，可填写属性并保存';
+      selectEdgeEnd(selection.id);
     }
     return;
   }
@@ -229,26 +370,16 @@ function selectFeature(selection: { kind: FeatureKind; id: string }): void {
       riskLevel: item.riskLevel,
     });
     const line = item.geometry.coordinates as number[][];
-    intermediateText.value = line
-      .slice(1, -1)
-      .map((point) => `${point[0]},${point[1]}`)
-      .join('\n');
+    edgePoints.value = line.slice(1, -1).map((point) => ({ lng: point[0], lat: point[1] }));
+    edgeHistory.value = [];
+    pathEditorOpen.value = true;
+    edgeNodeHint.value = '正在编辑已有道路；起终点锁定，可拖动、增加或删除拐点';
   }
 }
 
 function selectFromList(value: string): void {
   const [kind, id] = value.split(':');
   selectFeature({ kind: kind as FeatureKind, id });
-}
-
-function parseIntermediatePoints(): Coordinate[] {
-  if (!intermediateText.value.trim()) return [];
-  return intermediateText.value.split(/\r?\n/).map((line) => {
-    const [lng, lat] = line.split(',').map(Number);
-    if (!Number.isFinite(lng) || !Number.isFinite(lat))
-      throw new Error('中间点格式应为：经度,纬度；每行一个');
-    return { lng, lat };
-  });
 }
 
 async function saveCurrent(): Promise<void> {
@@ -260,7 +391,7 @@ async function saveCurrent(): Promise<void> {
       await mapApi.saveNode(datasetId, nodeForm, editingId.value ?? undefined);
     } else if (mode.value === 'EDGE') {
       if (!edgeForm.fromNodeId || !edgeForm.toNodeId) throw new Error('请先选择道路起点和终点');
-      edgeForm.intermediatePoints = parseIntermediatePoints();
+      edgeForm.intermediatePoints = edgePoints.value.map((point) => ({ ...point }));
       await mapApi.saveEdge(datasetId, edgeForm, editingId.value ?? undefined);
     } else {
       await savePointObject(datasetId);
@@ -361,7 +492,19 @@ async function importFile(event: Event): Promise<void> {
   }
 }
 
-onMounted(() => mapData.load(true));
+watch(
+  edgePath,
+  (path) => {
+    if (path.length >= 2) edgeForm.distanceM = Math.round(pathDistanceMeters(path) * 100) / 100;
+  },
+  { deep: true },
+);
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEditorKeyboard);
+  void mapData.load(true);
+});
+onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard));
 </script>
 
 <template>
@@ -369,7 +512,7 @@ onMounted(() => mapData.load(true));
     <header class="admin-map-heading">
       <div>
         <p class="eyebrow">管理端 · 地图数据治理</p>
-        <h1 id="admin-title">云麓校园地图编辑器</h1>
+        <h1 id="admin-title">{{ mapData.selectedDataset?.name ?? '学校示例校园' }}地图编辑器</h1>
       </div>
       <div class="dataset-actions">
         <el-select
@@ -380,7 +523,7 @@ onMounted(() => mapData.load(true));
           <el-option
             v-for="dataset in mapData.datasets"
             :key="dataset.id"
-            :label="dataset.name"
+            :label="`${dataset.name}${dataset.enabled ? '' : '（已停用）'}`"
             :value="dataset.id"
           />
         </el-select>
@@ -432,9 +575,14 @@ onMounted(() => mapData.load(true));
       <CampusMap
         :snapshot="mapData.snapshot"
         :selected-id="selectedId"
+        :draft-coordinate="draftCoordinate"
+        :edit-path="mode === 'EDGE' ? edgePath : []"
+        :path-editor-open="mode === 'EDGE' && pathEditorOpen"
+        :editing-instruction="editingInstruction"
         editable
         @map-click="mapClick"
         @feature-select="selectFeature"
+        @path-change="handlePathChange"
       />
 
       <aside class="data-inspector" aria-labelledby="inspector-title">
@@ -461,6 +609,10 @@ onMounted(() => mapData.load(true));
           />
         </el-select>
 
+        <p v-if="placementMessage" class="placement-feedback" role="status" aria-live="polite">
+          {{ placementMessage }}
+        </p>
+
         <div v-if="mode === 'SELECT'" class="inspector-empty">
           <strong>选择地图对象查看或编辑</strong>
           <p>可以点击地图，也可以使用上方可搜索下拉框。所有创建操作都支持直接填写坐标。</p>
@@ -480,7 +632,7 @@ onMounted(() => mapData.load(true));
               />
             </el-select>
           </el-form-item>
-          <div class="coordinate-grid">
+          <div class="coordinate-grid" :class="{ 'coordinate-grid--confirmed': placementMessage }">
             <el-form-item label="经度">
               <el-input-number
                 v-model="nodeForm.coordinate.lng"
@@ -505,7 +657,7 @@ onMounted(() => mapData.load(true));
           <el-form-item label="道路名称"><el-input v-model="edgeForm.name" /></el-form-item>
           <div class="coordinate-grid">
             <el-form-item label="起点">
-              <el-select v-model="edgeForm.fromNodeId" filterable>
+              <el-select :model-value="edgeForm.fromNodeId" filterable @change="selectEdgeStart">
                 <el-option
                   v-for="node in mapData.snapshot?.nodes"
                   :key="node.id"
@@ -514,7 +666,7 @@ onMounted(() => mapData.load(true));
                 />
               </el-select> </el-form-item
             ><el-form-item label="终点">
-              <el-select v-model="edgeForm.toNodeId" filterable>
+              <el-select :model-value="edgeForm.toNodeId" filterable @change="selectEdgeEnd">
                 <el-option
                   v-for="node in mapData.snapshot?.nodes"
                   :key="node.id"
@@ -524,17 +676,79 @@ onMounted(() => mapData.load(true));
               </el-select>
             </el-form-item>
           </div>
-          <el-form-item label="折线中间点">
-            <el-input
-              v-model="intermediateText"
-              type="textarea"
-              :rows="2"
-              placeholder="经度,纬度；每行一个（可选）"
-            />
-          </el-form-item>
+          <section class="edge-path-editor" aria-labelledby="edge-points-title">
+            <div class="edge-path-editor__heading">
+              <div>
+                <strong id="edge-points-title">线路拐点</strong>
+                <small>{{ edgePoints.length }} 个拐点；起终点固定在道路节点</small>
+              </div>
+              <el-button size="small" :disabled="!edgeForm.fromNodeId" @click="addEdgePoint">
+                添加拐点
+              </el-button>
+            </div>
+            <div v-if="edgePoints.length" class="edge-point-list">
+              <div v-for="(point, index) in edgePoints" :key="index" class="edge-point-row">
+                <span class="edge-point-index">{{ index + 1 }}</span>
+                <el-input-number
+                  v-model="point.lng"
+                  aria-label="拐点经度"
+                  :precision="7"
+                  :step="0.0001"
+                />
+                <el-input-number
+                  v-model="point.lat"
+                  aria-label="拐点纬度"
+                  :precision="7"
+                  :step="0.0001"
+                />
+                <div class="edge-point-actions">
+                  <el-button
+                    text
+                    aria-label="上移拐点"
+                    :disabled="index === 0"
+                    @click="moveEdgePoint(index, -1)"
+                    >上移</el-button
+                  >
+                  <el-button
+                    text
+                    aria-label="下移拐点"
+                    :disabled="index === edgePoints.length - 1"
+                    @click="moveEdgePoint(index, 1)"
+                    >下移</el-button
+                  >
+                  <el-button
+                    text
+                    type="danger"
+                    aria-label="删除拐点"
+                    @click="removeEdgePoint(index)"
+                    >删除</el-button
+                  >
+                </div>
+              </div>
+            </div>
+            <p v-else class="edge-path-empty">暂无拐点，当前为起终点直线。</p>
+            <div class="edge-editor-actions">
+              <el-button :disabled="!edgeHistory.length" @click="undoEdgePath"
+                >撤销上一步</el-button
+              >
+              <el-button :disabled="!edgePoints.length" @click="resetEdgePath"
+                >重置为直线</el-button
+              >
+              <el-button v-if="edgeForm.toNodeId && !pathEditorOpen" @click="pathEditorOpen = true"
+                >编辑线路</el-button
+              >
+              <el-button v-if="pathEditorOpen" type="primary" plain @click="finishPathEditing">
+                完成绘制
+              </el-button>
+              <el-button @click="beginMode('SELECT')">取消编辑</el-button>
+            </div>
+          </section>
           <div class="coordinate-grid">
             <el-form-item label="距离（米）">
-              <el-input-number v-model="edgeForm.distanceM" :min="1" /> </el-form-item
+              <el-input-number v-model="edgeForm.distanceM" :min="0" :precision="2" disabled />
+              <small class="field-help"
+                >根据完整折线自动计算，保存时由服务端复核</small
+              > </el-form-item
             ><el-form-item label="坡度">
               <el-select v-model="edgeForm.slopeLevel">
                 <el-option
@@ -708,7 +922,7 @@ onMounted(() => mapData.load(true));
           <el-form-item v-if="mode !== 'ENTRANCE'" label="说明">
             <el-input v-model="pointForm.description" type="textarea" :rows="2" />
           </el-form-item>
-          <div class="coordinate-grid">
+          <div class="coordinate-grid" :class="{ 'coordinate-grid--confirmed': placementMessage }">
             <el-form-item label="经度">
               <el-input-number
                 v-model="pointForm.coordinate.lng"

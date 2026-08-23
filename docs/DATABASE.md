@@ -25,7 +25,7 @@
 
 ## 3. 路网属性
 
-`route_edge` 保存 `distance_m`、`slope_level`、`has_stairs`、`stairs_count`、`width_level`、`surface_type`、`lighting_level`、`bidirectional`、`status`、`risk_level`、`data_source`、`confidence_level` 和 LineString `geom`。`BLOCKED` 与其他非 ACTIVE 状态都不会进入可通行搜索。
+`route_edge` 保存 `distance_m`、`slope_level`、`has_stairs`、`stairs_count`、`width_level`、`surface_type`、`lighting_level`、`bidirectional`、`status`、`risk_level`、`data_source`、`confidence_level` 和 LineString `geom`。保存或导入道路时，服务端按完整 LineString 逐段计算 `distance_m`，不信任客户端提交的距离。`BLOCKED` 与其他非 ACTIVE 状态都不会进入可通行搜索。
 
 障碍只有在 `review_status=APPROVED`、`active=true` 且未过期时影响路线；阻断型障碍会排除边，其他障碍增加成本。
 
@@ -35,6 +35,9 @@
 - 种子数量：5 建筑、5 入口、20 节点、31 道路、15 设施、5 障碍。
 - 来源统一为 `DEMO_GENERATED`，可信度为 `UNKNOWN`，不伪装成高可信实测。
 - 五类场景：楼梯绕行、坡度冲突、动态封路、未知属性、设施偏好。
+- V8 后该数据集默认停用，仅管理员可查看；数据与历史关联均保留。
+
+正式空白数据集 `SCHOOL_EXAMPLE_V1` 的中心为 `104.695359,31.534827`（GCJ-02），默认启用，不预置地图对象，由管理员手工标注。
 
 重置事务先以 `SELECT ... FOR UPDATE` 校验 `is_demo=true`；否则返回“只允许重置 Demo 数据集”。它只清理当前 Demo 的评分、评论、建议、路线历史和 `USER_REPORT` 障碍，恢复种子对象状态，并保留审计日志。Formal 数据不会进入清理 SQL。
 
@@ -49,5 +52,6 @@
 | V5 | `V5__add_blocked_route_edge_status.sql` | 增加道路动态阻断状态 |
 | V6 | `V6__business_workflow.sql` | 资料、互动、上报、历史/收藏、设置与业务审计 |
 | V7 | `V7__agent_assistant.sql` | 对话、消息、调用/Tool 日志和操作草稿 |
+| V8 | `V8__add_blank_school_example_dataset.sql` | 新增空白学校示例校园 Formal 数据集并停用旧 Demo |
 
 已执行迁移不允许回写；后续 schema 变更必须新增迁移。备份和恢复应包含数据库卷或 PostgreSQL 逻辑备份，不能只复制前端文件。

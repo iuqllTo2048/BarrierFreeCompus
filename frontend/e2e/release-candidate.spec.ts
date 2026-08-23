@@ -8,44 +8,46 @@ async function login(page: Page, role: 'USER' | 'ADMIN' = 'USER'): Promise<void>
   await expect(page).toHaveURL(role === 'ADMIN' ? /\/admin$/ : /\/user$/);
 }
 
-async function waitForRouteForm(page: Page): Promise<void> {
+async function waitForBlankSchoolDataset(page: Page): Promise<void> {
   const routePage = page.getByLabel('规划校园通行路线');
-  await expect(routePage).toContainText('西北门（N-01）');
-  await expect(routePage).toContainText('东南门（N-20）');
+  await expect(routePage).toContainText('学校示例校园数据集');
+  await expect(routePage).toContainText('起点从地图选择请选择');
+  await expect(routePage).not.toContainText('西北门（N-01）');
 }
 
-test('USER 登录后可规划三类路线并看到风险文字', async ({ page }) => {
+test('USER 默认进入新学校空白数据集且看不到停用的旧 Demo', async ({ page }) => {
   await login(page);
-  await waitForRouteForm(page);
-  await page.getByRole('button', { name: '规划三类路线' }).click();
-  const results = page.getByRole('complementary', { name: '路线规划结果' });
-  await expect(results).toContainText('条候选路线');
-  await expect(results).toContainText(/最短路线|无障碍优先|综合路线/);
-  await expect(results).toContainText(/风险/);
+  await waitForBlankSchoolDataset(page);
+  await expect(page.getByRole('option', { name: /云麓校园演示数据/ })).toHaveCount(0);
 });
 
-test('轮椅模式规划结果不包含楼梯通行并保留路线比较', async ({ page }) => {
-  await login(page);
-  await waitForRouteForm(page);
-  await page.getByLabel('规划校园通行路线').getByText('普通步行', { exact: true }).click();
-  await page.getByRole('option', { name: '轮椅出行' }).click();
-  await page.getByRole('button', { name: '规划三类路线' }).click();
-  const results = page.getByRole('complementary', { name: '路线规划结果' });
-  await expect(results).toContainText('条候选路线');
-  await expect(results).toContainText(/无障碍优先|综合路线/);
-  await expect(results).not.toContainText('楼梯 1');
+test('ADMIN 可查看停用旧数据并使用折线拐点撤销操作', async ({ page }) => {
+  await login(page, 'ADMIN');
+  await page.getByRole('combobox', { name: '管理数据集' }).press('ArrowDown');
+  await page.getByRole('option', { name: '云麓校园演示数据（已停用）' }).click();
+  await expect(page.getByRole('toolbar', { name: '地图编辑工具' })).toContainText(/[1-9]\d* 节点/);
+
+  await page.locator('#object-select').click();
+  await page.getByRole('option', { name: '道路 · 中央连廊' }).click();
+  await expect(page.getByText('1 个拐点；起终点固定在道路节点')).toBeVisible();
+  await page.getByRole('button', { name: '添加拐点' }).click();
+  await expect(page.getByText('2 个拐点；起终点固定在道路节点')).toBeVisible();
+  await page.getByRole('button', { name: '撤销上一步', exact: true }).click();
+  await expect(page.getByText('1 个拐点；起终点固定在道路节点')).toBeVisible();
 });
 
 test('用户提交的脚本文本只按普通文字展示', async ({ page }) => {
   const xssTitle = `<img src=x onerror=alert(1)> ${Date.now()}`;
+  const reportLng = (104.690359 + Math.random() * 0.01).toFixed(7);
+  const reportLat = (31.529827 + Math.random() * 0.01).toFixed(7);
   await login(page);
   await page.getByRole('link', { name: '用户服务' }).click();
   await page.getByRole('tab', { name: '障碍上报' }).click();
   await page.locator('#barrier-title').fill(xssTitle);
   await page.locator('#barrier-description').fill('<script>window.__xss=1</script> 测试上报');
   const coordinates = page.locator('.coordinate-grid input');
-  await coordinates.nth(0).fill('112.936300');
-  await coordinates.nth(1).fill('28.177800');
+  await coordinates.nth(0).fill(reportLng);
+  await coordinates.nth(1).fill(reportLat);
   await page.getByRole('button', { name: '提交上报' }).click();
   await expect(page.getByText('障碍已提交，审核通过前不会影响路线')).toBeVisible();
   await page.getByRole('tab', { name: '我的上报' }).click();
@@ -61,22 +63,15 @@ test('ADMIN 能进入治理工作台且权限页面完整加载', async ({ page 
   await expect(page.getByRole('button', { name: '安全重置 Demo' })).toBeVisible();
 });
 
-test('AI 外部调用关闭时使用确定性 Mock 且手工路线仍可使用', async ({ page }) => {
+test('智能助手状态可见且手工路线入口不依赖外部模型', async ({ page }) => {
   await login(page);
   await page.getByRole('link', { name: '智能路线助手' }).click();
-  await page.getByLabel('路线、设施或障碍需求').fill('从图书馆到体育与健康中心，轮椅怎么走？');
-  await page.getByRole('button', { name: '开始分析' }).click();
-  await expect(page.getByText('本地演示模式')).toBeVisible();
-  await expect(page.getByRole('list', { name: '业务工具执行进度' })).toContainText(
-    '计算无障碍路线',
-  );
-  await expect(page.getByText('路线助手结论')).toBeVisible();
+  await expect(page.getByText(/真实模型|本地演示模式/)).toBeVisible();
+  await expect(
+    page.getByText('AI 负责理解与解释，路线和风险始终来自后端白名单工具。'),
+  ).toBeVisible();
   await page.getByRole('link', { name: '路线规划' }).click();
-  await waitForRouteForm(page);
-  await page.getByRole('button', { name: '规划三类路线' }).click();
-  await expect(page.getByRole('complementary', { name: '路线规划结果' })).toContainText(
-    '条候选路线',
-  );
+  await waitForBlankSchoolDataset(page);
 });
 
 test.describe('375px 移动端', () => {

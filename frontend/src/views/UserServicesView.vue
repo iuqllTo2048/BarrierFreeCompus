@@ -6,6 +6,7 @@ import CampusMap from '../components/CampusMap.vue';
 import UiStatePanel from '../components/UiStatePanel.vue';
 import * as businessApi from '../services/business-api';
 import { readApiMessage } from '../services/http';
+import { DEFAULT_CAMPUS_CENTER } from '../services/map-geometry';
 import { useMapDataStore } from '../stores/map-data';
 import type {
   BarrierReport,
@@ -45,8 +46,8 @@ const report = reactive({
   barrierType: 'TEMPORARY_CLOSURE',
   description: '',
   expectedDurationHours: 24,
-  lng: 112.9365,
-  lat: 28.1775,
+  lng: DEFAULT_CAMPUS_CENTER.lng,
+  lat: DEFAULT_CAMPUS_CENTER.lat,
 });
 
 const mobilityOptions: Array<{ value: MobilityMode; label: string }> = [

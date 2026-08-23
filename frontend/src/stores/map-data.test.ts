@@ -13,7 +13,7 @@ const datasets: DatasetView[] = [
     name: '演示数据',
     datasetType: 'DEMO',
     coordinateSystem: 'GCJ02',
-    enabled: true,
+    enabled: false,
     demo: true,
     seed: 20260818,
     description: null,
@@ -51,16 +51,16 @@ describe('地图数据 store', () => {
     vi.resetAllMocks();
   });
 
-  it('首次加载选择首个数据集并获取快照', async () => {
+  it('首次加载优先选择启用的数据集并获取快照', async () => {
     vi.mocked(mapApi.listDatasets).mockResolvedValue(datasets);
-    vi.mocked(mapApi.getSnapshot).mockResolvedValue(snapshot(datasets[0]));
+    vi.mocked(mapApi.getSnapshot).mockResolvedValue(snapshot(datasets[1]));
     const store = useMapDataStore();
 
     await store.load();
 
-    expect(store.selectedDatasetId).toBe('demo');
-    expect(store.selectedDataset?.name).toBe('演示数据');
-    expect(store.snapshot?.dataset.id).toBe('demo');
+    expect(store.selectedDatasetId).toBe('formal');
+    expect(store.selectedDataset?.name).toBe('正式数据');
+    expect(store.snapshot?.dataset.id).toBe('formal');
     expect(store.loading).toBe(false);
   });
 
@@ -69,13 +69,13 @@ describe('地图数据 store', () => {
     store.selectedDatasetId = 'removed';
     vi.mocked(mapApi.listDatasets).mockResolvedValue(datasets);
     vi.mocked(mapApi.getSnapshot)
-      .mockResolvedValueOnce(snapshot(datasets[0]))
+      .mockResolvedValueOnce(snapshot(datasets[1]))
       .mockResolvedValueOnce(snapshot(datasets[1]));
 
     await store.load(true);
     await store.select('formal', true);
 
-    expect(mapApi.getSnapshot).toHaveBeenNthCalledWith(1, 'demo', true);
+    expect(mapApi.getSnapshot).toHaveBeenNthCalledWith(1, 'formal', true);
     expect(mapApi.getSnapshot).toHaveBeenNthCalledWith(2, 'formal', true);
     expect(store.snapshot?.dataset.id).toBe('formal');
   });

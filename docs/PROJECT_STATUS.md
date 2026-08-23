@@ -3,8 +3,8 @@
 ## 当前阶段
 
 - 当前版本：v1.0（技术版本 `1.0.0`）
-- 当前 Stage：Stage 9（发布与交付）
-- 状态：代码、文档、自动化发布验收和用户人工验收均已完成
+- 当前 Stage：v1.0 后续改进（校园底图与折线路网编辑升级）
+- 状态：实现与自动验证已完成，等待用户人工验收
 - Git Tag：`v1.0`（用户已明确确认创建）
 
 ## v1.0 交付范围
@@ -31,18 +31,26 @@
 - 审计 TODO、TS `any`、假实现、Secret 与依赖；移除未直接使用的 `@element-plus/icons-vue` 依赖。
 - 通过正式 Compose 保留卷重建；发现持久卷 Demo 曾被停用后，仅通过管理员 API 重新启用，没有执行重置或删除数据。
 
+## 地图编辑升级
+
+- 新增中心为 `104.695359,31.534827`（GCJ-02）的“学校示例校园数据集”，初始不包含任何地图对象。
+- `YUNLU_DEMO_V1` 迁移为停用状态，用户端不再读取；历史数据保留，管理员仍可查看和恢复。
+- 管理端道路支持地图折线绘制、拖动、增删拐点、撤销、重置、完成与取消，并保留坐标输入和按钮操作。
+- 节点、建筑、入口、设施和障碍点选增加地图定位标记、操作说明、坐标反馈和辅助技术状态播报。
+- 道路距离按完整 LineString 逐段计算，服务端保存值为 A* 权威距离。
+
 ## 发布验证
 
 | 项目 | v1.0 结果 |
 |---|---|
-| 后端 | 65/65 JUnit 通过；Testcontainers 空库执行 Flyway V1–V7 |
+| 后端 | 67/67 JUnit 通过；Testcontainers 空库执行 Flyway V1–V8 |
 | A* 性能 | 400 节点、100 次最终回归：P50 413µs、P95 1,003µs、最大 3,034µs |
-| 前端 | 29/29 Vitest；vue-tsc、ESLint、Prettier、Vite production build 通过 |
-| 浏览器 | Playwright Chromium Edge 6/6 通过，含 375px 移动端 |
+| 前端 | 31/31 Vitest；vue-tsc、ESLint、Prettier、Vite production build 通过 |
+| 浏览器 | Playwright Chromium Edge 6/6 通过，含空白数据集、折线拐点撤销与 375px 移动端 |
 | 安全/依赖 | Secret 扫描 0；npm 官方漏洞库 0；未发现 TS `any` 或业务 TODO |
 | Docker E2E | 独立 18080/18081 + PostGIS tmpfs 全流程通过并自动销毁 |
 | 正式 Compose | db/backend healthy，Nginx 200，代理 health `UP`，未登录 API 401 |
-| Demo | V7 持久卷保留；`YUNLU_DEMO_V1` 已启用，未执行重置 |
+| 数据集 | `SCHOOL_EXAMPLE_V1` 启用且为空白；`YUNLU_DEMO_V1` 停用并保留 |
 
 完整测试证据见 [TEST_REPORT.md](TEST_REPORT.md)。
 
@@ -64,4 +72,4 @@
 
 ## 下一步
 
-v1.0 发布完成。后续优先投入真实数据采集/核验和生产运维加固；操作交付见 [用户与管理员详细使用说明书](USER_ADMIN_MANUAL.md)。
+当前地图编辑升级已完成自动验证并等待人工验收；通过后再决定版本号与提交。操作说明见 [用户与管理员详细使用说明书](USER_ADMIN_MANUAL.md)。

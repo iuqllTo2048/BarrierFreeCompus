@@ -1411,6 +1411,65 @@ h2 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.map-editing-instruction {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 186;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 9px 12px;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary);
+  border-radius: 8px;
+  box-shadow: var(--shadow-map);
+  font-size: 12px;
+  line-height: 1.5;
+  transform: translateX(-50%);
+}
+.map-pick-marker {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 24px;
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--color-focus);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .map-pick-marker {
+    animation: map-pick-confirm 200ms ease-out;
+  }
+}
+@keyframes map-pick-confirm {
+  from {
+    opacity: 0.55;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.map-pick-marker::before,
+.map-pick-marker::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: var(--color-primary);
+  content: '';
+  transform: translate(-50%, -50%);
+}
+.map-pick-marker::before {
+  width: 12px;
+  height: 2px;
+}
+.map-pick-marker::after {
+  width: 2px;
+  height: 12px;
+}
 .data-summary-panel {
   max-height: calc(100vh - 65px);
   overflow-y: auto;
@@ -1627,6 +1686,88 @@ h2 {
   border-left: 3px solid var(--primary);
   font-size: 0.78rem;
   line-height: 1.5;
+}
+.placement-feedback {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-success) 38%, var(--color-border));
+  border-radius: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.coordinate-grid--confirmed .el-input__wrapper {
+  box-shadow: 0 0 0 2px var(--color-focus) inset;
+}
+.edge-path-editor {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 18px;
+  padding: 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.edge-path-editor__heading,
+.edge-editor-actions,
+.edge-point-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+.edge-path-editor__heading small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.edge-point-list {
+  display: grid;
+  gap: 8px;
+}
+.edge-point-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.edge-point-row .el-input-number {
+  width: 100%;
+}
+.edge-point-index {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+}
+.edge-point-actions {
+  grid-column: 2 / -1;
+  justify-content: end;
+}
+.edge-point-actions .el-button + .el-button,
+.edge-editor-actions .el-button + .el-button {
+  margin-left: 0;
+}
+.edge-path-empty,
+.field-help {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.edge-editor-actions {
+  justify-content: start;
 }
 .visually-hidden {
   position: absolute !important;

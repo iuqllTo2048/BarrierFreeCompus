@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -52,6 +53,7 @@ import org.testcontainers.utility.DockerImageName;
 @Transactional
 class MapDataIntegrationTest {
     private static final UUID DEMO_DATASET_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
+    private static final UUID SCHOOL_DATASET_ID = UUID.fromString("20000000-0000-0000-0000-000000000002");
     private static final UUID NODE_2 = UUID.fromString("40000000-0000-0000-0000-000000000002");
     private static final UUID NODE_3 = UUID.fromString("40000000-0000-0000-0000-000000000003");
     private static final UUID NODE_7 = UUID.fromString("40000000-0000-0000-0000-000000000007");
@@ -105,6 +107,11 @@ class MapDataIntegrationTest {
     @Autowired
     private AnalyticsService analyticsService;
 
+    @BeforeEach
+    void enableLegacyDemoFixture() {
+        jdbcTemplate.update("UPDATE dataset SET enabled=TRUE WHERE id=?", DEMO_DATASET_ID);
+    }
+
     @Test
     void shouldMigrateSeedAndQueryGcj02SpatialData() {
         MapDtos.MapSnapshot snapshot = mapDataService.snapshot(DEMO_DATASET_ID, null, true);
@@ -122,6 +129,49 @@ class MapDataIntegrationTest {
                         Integer.class,
                         DEMO_DATASET_ID))
                 .isEqualTo(20);
+    }
+
+    @Test
+    void shouldExposeBlankSchoolDatasetAndKeepLegacyDemoDisabled() {
+        jdbcTemplate.update("UPDATE dataset SET enabled=FALSE WHERE id=?", DEMO_DATASET_ID);
+        List<MapDtos.DatasetView> publicDatasets = mapDataService.listDatasets(false);
+        MapDtos.MapSnapshot school = mapDataService.snapshot(SCHOOL_DATASET_ID, null, false);
+
+        assertThat(publicDatasets).extracting(MapDtos.DatasetView::code)
+                .containsExactly("SCHOOL_EXAMPLE_V1");
+        assertThat(school.dataset().name()).isEqualTo("学校示例校园数据集");
+        assertThat(school.dataset().centerLng()).isEqualTo(104.695359);
+        assertThat(school.dataset().centerLat()).isEqualTo(31.534827);
+        assertThat(school.buildings()).isEmpty();
+        assertThat(school.nodes()).isEmpty();
+        assertThat(school.edges()).isEmpty();
+        assertThat(school.facilities()).isEmpty();
+        assertThat(school.barriers()).isEmpty();
+        assertThat(mapDataService.listDatasets(true).stream()
+                .filter(dataset -> dataset.code().equals("YUNLU_DEMO_V1"))
+                .findFirst().orElseThrow().enabled()).isFalse();
+    }
+
+    @Test
+    void shouldPersistPolylineAndCalculateAuthoritativeDistance() {
+        UUID start = mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("TEST-START", "测试起点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        UUID end = mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("TEST-END", "测试终点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.696359, 31.535827)), "demo_admin");
+        UUID edge = mapDataService.saveEdge(SCHOOL_DATASET_ID, null,
+                new MapDtos.EdgeRequest("TEST-EDGE", "测试折线", start, end, BigDecimal.ONE,
+                        "FLAT", false, 0, "STANDARD", "ASPHALT", "HIGH", true,
+                        "ACTIVE", "LOW", List.of(new MapDtos.Coordinate(104.696359, 31.534827))),
+                "demo_admin");
+
+        MapDtos.EdgeView saved = mapDataService.snapshot(SCHOOL_DATASET_ID, null, true).edges().stream()
+                .filter(item -> item.id().equals(edge)).findFirst().orElseThrow();
+        assertThat(saved.geometry().path("coordinates")).hasSize(3);
+        assertThat(saved.distanceM()).isGreaterThan(new BigDecimal("190"));
+        assertThat(saved.distanceM()).isLessThan(new BigDecimal("220"));
+        assertThat(saved.distanceM()).isNotEqualByComparingTo(BigDecimal.ONE);
     }
 
     @Test
@@ -222,12 +272,13 @@ class MapDataIntegrationTest {
         try {
             assertThat(mapDataService.setDatasetEnabled(DEMO_DATASET_ID, false, "integration-test").enabled())
                     .isFalse();
-            assertThat(mapDataService.listDatasets(false)).isEmpty();
+            assertThat(mapDataService.listDatasets(false)).extracting(MapDtos.DatasetView::code)
+                    .containsExactly("SCHOOL_EXAMPLE_V1");
         } finally {
             mapDataService.setDatasetEnabled(DEMO_DATASET_ID, true, "integration-test");
         }
 
-        assertThat(mapDataService.listDatasets(false)).hasSize(1);
+        assertThat(mapDataService.listDatasets(false)).hasSize(2);
     }
 
     @Test

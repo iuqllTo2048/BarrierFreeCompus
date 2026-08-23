@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -55,7 +56,7 @@ public class MapDataService {
                 SELECT d.id, d.code, d.name, d.dataset_type, d.coordinate_system, d.enabled, d.is_demo,
                        d.seed, d.description, c.center_lng, c.center_lat
                 FROM dataset d JOIN campus c ON c.id = d.campus_id
-                """ + condition + " ORDER BY d.is_demo DESC, d.name",
+                """ + condition + " ORDER BY d.enabled DESC, d.created_at DESC, d.name",
                 (rs, row) -> new DatasetView(
                         rs.getObject("id", UUID.class), rs.getString("code"), rs.getString("name"),
                         rs.getString("dataset_type"), rs.getString("coordinate_system"),
@@ -214,10 +215,11 @@ public class MapDataService {
         if (request.intermediatePoints() != null) line.addAll(request.intermediatePoints());
         line.add(end);
         String wkt = lineStringWkt(line);
+        BigDecimal distanceM = lineDistanceMeters(line);
         int stairs = request.hasStairs() ? request.stairsCount() : 0;
         UUID saved;
         Object[] values = {
-                request.externalId(), request.name(), request.fromNodeId(), request.toNodeId(), request.distanceM(),
+                request.externalId(), request.name(), request.fromNodeId(), request.toNodeId(), distanceM,
                 request.slopeLevel(), request.hasStairs(), stairs, request.widthLevel(), request.surfaceType(),
                 request.lightingLevel(), request.bidirectional(), request.status(), request.riskLevel(), wkt
         };
@@ -562,6 +564,27 @@ public class MapDataService {
                 .reduce((left, right) -> left + "," + right)
                 .orElseThrow();
         return "LINESTRING(" + coordinates + ")";
+    }
+
+    private BigDecimal lineDistanceMeters(List<Coordinate> points) {
+        double meters = 0;
+        for (int index = 1; index < points.size(); index++) {
+            meters += haversineMeters(points.get(index - 1), points.get(index));
+        }
+        if (meters <= 0) throw badRequest("道路几何长度必须大于 0");
+        return BigDecimal.valueOf(meters).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private double haversineMeters(Coordinate first, Coordinate second) {
+        double earthRadius = 6_371_000;
+        double firstLat = Math.toRadians(first.lat());
+        double secondLat = Math.toRadians(second.lat());
+        double deltaLat = secondLat - firstLat;
+        double deltaLng = Math.toRadians(second.lng() - first.lng());
+        double a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2)
+                + Math.cos(firstLat) * Math.cos(secondLat)
+                * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+        return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     private void audit(String username, String action, String targetType, String targetId) {
