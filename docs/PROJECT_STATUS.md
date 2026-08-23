@@ -4,7 +4,7 @@
 
 - 当前版本：v1.0（技术版本 `1.0.0`）
 - 当前 Stage：v1.0 后续改进（Formal GeoJSON 安全协作）
-- 状态：实现与自动验证已完成，等待用户人工验收
+- 状态：已实现、验收并提交（`1cf48cf`）
 - Git Tag：`v1.0`（用户已明确确认创建）
 
 ## v1.0 交付范围
@@ -81,4 +81,4 @@
 
 ## 下一步
 
-Formal GeoJSON 安全协作已完成自动验证并等待人工验收；通过后再创建中文提交，不自行推送。操作说明见 [用户与管理员详细使用说明书](USER_ADMIN_MANUAL.md)。
+Formal GeoJSON 安全协作已完成验收并提交。下一步由用户决定是否推送远程或创建新的 v2.0 Stage；整项目接手说明见 [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md)。

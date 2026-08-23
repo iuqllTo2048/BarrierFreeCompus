@@ -53,6 +53,7 @@ docker-compose.e2e.yml     隔离的发布测试编排
 - [A* 算法](docs/ALGORITHM.md) · [智能体边界](docs/AGENT.md)
 - [技术栈](docs/TECH_STACK.md) · [外部配置](docs/EXTERNAL_CONFIG.md)
 - [测试报告](docs/TEST_REPORT.md) · [项目复盘](docs/PROJECT_RECAP.md) · [项目状态](docs/PROJECT_STATUS.md)
+- [整项目开发交接](docs/PROJECT_HANDOFF.md)
 
 ## 开发验证
 
