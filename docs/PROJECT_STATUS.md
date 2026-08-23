@@ -3,7 +3,7 @@
 ## 当前阶段
 
 - 当前版本：v1.0（技术版本 `1.0.0`）
-- 当前 Stage：v1.0 后续改进（校园底图与折线路网编辑升级）
+- 当前 Stage：v1.0 后续改进（Formal GeoJSON 安全协作）
 - 状态：实现与自动验证已完成，等待用户人工验收
 - Git Tag：`v1.0`（用户已明确确认创建）
 
@@ -39,18 +39,27 @@
 - 节点、建筑、入口、设施和障碍点选增加地图定位标记、操作说明、坐标反馈和辅助技术状态播报。
 - 道路距离按完整 LineString 逐段计算，服务端保存值为 A* 权威距离。
 
+## Formal GeoJSON 安全协作
+
+- GeoJSON v2 可共享建筑、入口、节点、折线路径、设施及管理员维护的障碍；不包含账号、业务记录、AI 会话或普通用户上报。
+- Formal 导入先做只读预检，展示六类对象的新增、相同和冲突统计；错误存在时不能应用。
+- 合并导入不会删除文件中缺失的本地对象；冲突默认保留本地，也可由管理员明确选择覆盖。
+- 预检和应用之间使用文件指纹、目标数据指纹防止并发覆盖；目标变化时返回 409 并要求重新预检。
+- 每次应用前在同一事务保存目标 GeoJSON JSONB 备份并记录审计；道路距离仍由服务端按完整 LineString 复算。
+- 旧 Demo GeoJSON 导入接口保持兼容，不放宽其 Demo 隔离边界。
+
 ## 发布验证
 
 | 项目 | v1.0 结果 |
 |---|---|
-| 后端 | 67/67 JUnit 通过；Testcontainers 空库执行 Flyway V1–V8 |
+| 后端 | 71/71 JUnit 通过；Testcontainers 空库执行 Flyway V1–V9 |
 | A* 性能 | 400 节点、100 次最终回归：P50 413µs、P95 1,003µs、最大 3,034µs |
 | 前端 | 31/31 Vitest；vue-tsc、ESLint、Prettier、Vite production build 通过 |
-| 浏览器 | Playwright Chromium Edge 6/6 通过，含空白数据集、折线拐点撤销与 375px 移动端 |
+| 浏览器 | Playwright Chromium Edge 7/7 通过，含 Formal GeoJSON 预检合并、折线拐点撤销与 375px 移动端 |
 | 安全/依赖 | Secret 扫描 0；npm 官方漏洞库 0；未发现 TS `any` 或业务 TODO |
 | Docker E2E | 独立 18080/18081 + PostGIS tmpfs 全流程通过并自动销毁 |
 | 正式 Compose | db/backend healthy，Nginx 200，代理 health `UP`，未登录 API 401 |
-| 数据集 | `SCHOOL_EXAMPLE_V1` 启用且为空白；`YUNLU_DEMO_V1` 停用并保留 |
+| 数据集 | `SCHOOL_EXAMPLE_V1` 启用，正式卷现有 2 个节点且其余对象为 0；`YUNLU_DEMO_V1` 停用并保留 |
 
 完整测试证据见 [TEST_REPORT.md](TEST_REPORT.md)。
 
@@ -72,4 +81,4 @@
 
 ## 下一步
 
-当前地图编辑升级已完成自动验证并等待人工验收；通过后再决定版本号与提交。操作说明见 [用户与管理员详细使用说明书](USER_ADMIN_MANUAL.md)。
+Formal GeoJSON 安全协作已完成自动验证并等待人工验收；通过后再创建中文提交，不自行推送。操作说明见 [用户与管理员详细使用说明书](USER_ADMIN_MANUAL.md)。

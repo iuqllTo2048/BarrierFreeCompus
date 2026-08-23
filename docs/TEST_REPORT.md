@@ -89,3 +89,16 @@ E2E 使用 `barrierfreecampus-e2e`、18080/18081 和 PostgreSQL tmpfs；脚本�
 | 容器 | db/backend healthy，frontend 监听 8080；实际底图定位在新校园中心 |
 
 本轮人工验收重点：管理员在空白数据集中创建两个道路节点，使用地图点击和拖动形成多拐点道路，完成后保存并刷新；确认折线形状不变、距离为只读且由服务端复算。点选节点、入口、设施或障碍时，应立即看到十字定位标记、坐标提示和检查器字段同步变化。
+
+## 9. 2026-08-23 Formal GeoJSON 安全协作回归
+
+| 层级 | 本轮结果 |
+|---|---|
+| 数据迁移 | Testcontainers 空库成功执行 Flyway V1–V9；V9 创建导入前 JSONB 备份表与索引 |
+| 后端 | 71/71 JUnit 通过；覆盖只读预检、双指纹过期保护、KEEP_TARGET/OVERWRITE、备份审计与六类共 81 个对象持久化 |
+| 前端 | 31/31 Vitest、TypeScript、ESLint、Prettier、production build 全部通过 |
+| 浏览器 | 隔离 Chromium Edge 7/7 通过；新增 Formal 文件选择、预检、安全提示与确认合并流程 |
+| 数据安全 | E2E 使用独立 tmpfs PostGIS 并自动销毁；未对正式 `SCHOOL_EXAMPLE_V1` 执行测试导入 |
+| 正式 Compose | Flyway V9，db/backend healthy，frontend 200、代理 health `UP`；验证前后保留正式卷已有 2 个节点 |
+
+人工验收重点：在管理地图导出 `SCHOOL_EXAMPLE_V1`，重新选择该文件，确认预览统计、默认“保留本地”、不删除提示和成功后的 `backupId`；然后由另一环境修改同编号对象，分别检查保留与覆盖策略。

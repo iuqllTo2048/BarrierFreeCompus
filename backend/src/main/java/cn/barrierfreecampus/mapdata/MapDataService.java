@@ -24,9 +24,17 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -38,6 +46,9 @@ import org.springframework.web.server.ResponseStatusException;
 public class MapDataService {
     private static final String MANUAL = "MANUAL_ESTIMATE";
     private static final String UNKNOWN = "UNKNOWN";
+    private static final List<String> IMPORT_ORDER = List.of(
+            "BUILDING", "NODE", "ENTRANCE", "FACILITY", "EDGE", "BARRIER");
+    private static final Set<String> IMPORT_TYPES = Set.copyOf(IMPORT_ORDER);
 
     private final JdbcTemplate jdbc;
     private final DatasetMapper datasetMapper;
@@ -326,14 +337,37 @@ public class MapDataService {
         MapSnapshot snapshot = snapshot(datasetId, null, true);
         ObjectNode root = objectMapper.createObjectNode();
         root.put("type", "FeatureCollection");
+        root.put("schemaVersion", 2);
         root.put("datasetId", datasetId.toString());
+        root.put("datasetCode", snapshot.dataset().code());
         root.put("coordinateSystem", snapshot.dataset().coordinateSystem());
+        root.put("exportedAt", Instant.now().toString());
         ArrayNode features = root.putArray("features");
+        for (BuildingView building : snapshot.buildings()) {
+            ObjectNode feature = feature(features, building.geometry(), "BUILDING", building.externalId(), building.name());
+            ObjectNode properties = (ObjectNode) feature.get("properties");
+            properties.put("category", building.category());
+            properties.put("active", building.active());
+            properties.put("dataSource", building.dataSource());
+            properties.put("confidenceLevel", building.confidenceLevel());
+        }
+        for (EntranceView entrance : snapshot.entrances()) {
+            ObjectNode feature = feature(features, point(entrance.lng(), entrance.lat()), "ENTRANCE",
+                    entrance.externalId(), entrance.name());
+            ObjectNode properties = (ObjectNode) feature.get("properties");
+            properties.put("buildingExternalId", externalBuildingId(snapshot.buildings(), entrance.buildingId()));
+            properties.put("accessible", entrance.accessible());
+            properties.put("entranceType", entrance.entranceType());
+            properties.put("status", entrance.status());
+            properties.put("active", entrance.active());
+        }
         for (NodeView node : snapshot.nodes()) {
             ObjectNode feature = feature(features, point(node.lng(), node.lat()), "NODE", node.externalId(), node.name());
             ObjectNode properties = (ObjectNode) feature.get("properties");
             properties.put("nodeType", node.nodeType());
             properties.put("active", node.active());
+            properties.put("dataSource", node.dataSource());
+            properties.put("confidenceLevel", node.confidenceLevel());
         }
         for (EdgeView edge : snapshot.edges()) {
             ObjectNode feature = feature(features, edge.geometry(), "EDGE", edge.externalId(), edge.name());
@@ -350,16 +384,34 @@ public class MapDataService {
             properties.put("bidirectional", edge.bidirectional());
             properties.put("status", edge.status());
             properties.put("riskLevel", edge.riskLevel());
+            properties.put("dataSource", edge.dataSource());
+            properties.put("confidenceLevel", edge.confidenceLevel());
         }
         for (FacilityView facility : snapshot.facilities()) {
             ObjectNode feature = feature(features, point(facility.lng(), facility.lat()), "FACILITY",
                     facility.externalId(), facility.name());
             ObjectNode properties = (ObjectNode) feature.get("properties");
             properties.put("facilityType", facility.facilityType());
+            if (facility.buildingId() != null) {
+                properties.put("buildingExternalId", externalBuildingId(snapshot.buildings(), facility.buildingId()));
+            }
             properties.put("floorLabel", facility.floorLabel());
             properties.put("openStatus", facility.openStatus());
             properties.put("description", facility.description());
             properties.put("active", facility.active());
+            properties.put("dataSource", facility.dataSource());
+            properties.put("confidenceLevel", facility.confidenceLevel());
+        }
+        for (BarrierView barrier : snapshot.barriers()) {
+            if ("USER_REPORT".equals(barrier.dataSource())) continue;
+            ObjectNode feature = feature(features, barrier.geometry(), "BARRIER", barrier.externalId(), barrier.title());
+            ObjectNode properties = (ObjectNode) feature.get("properties");
+            properties.put("barrierType", barrier.barrierType());
+            properties.put("description", barrier.description());
+            properties.put("reviewStatus", barrier.reviewStatus());
+            properties.put("active", barrier.active());
+            properties.put("dataSource", barrier.dataSource());
+            properties.put("confidenceLevel", barrier.confidenceLevel());
         }
         return root;
     }
@@ -427,6 +479,381 @@ public class MapDataService {
         }
         audit(actor, "GEOJSON_IMPORT", "DATASET", datasetId.toString());
         return new ImportResult(nodes, edges, facilities);
+    }
+
+    public MapDtos.ImportPreview previewGeoJson(UUID datasetId, JsonNode root) {
+        DatasetView dataset = requireDataset(datasetId, true);
+        ImportAnalysis analysis = analyzeImport(dataset, root);
+        return new MapDtos.ImportPreview(
+                fingerprint(root), analysis.targetFingerprint(), analysis.summaries(),
+                analysis.conflictSamples(), analysis.errors(), analysis.warnings());
+    }
+
+    @Transactional
+    public MapDtos.ImportApplyResult applyGeoJson(
+            UUID datasetId, MapDtos.ImportApplyRequest request, String actor) {
+        DatasetView dataset = requireDataset(datasetId, true);
+        ImportAnalysis analysis = analyzeImport(dataset, request.geoJson());
+        if (!analysis.errors().isEmpty()) throw badRequest("GeoJSON 预检未通过：" + analysis.errors().getFirst());
+        if (!fingerprint(request.geoJson()).equals(request.payloadFingerprint())) {
+            throw badRequest("文件内容与预检时不一致，请重新预检");
+        }
+        if (!analysis.targetFingerprint().equals(request.targetFingerprint())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "目标数据集已发生变化，请重新预检");
+        }
+
+        JsonNode backup = exportGeoJson(datasetId);
+        UUID backupId = UUID.randomUUID();
+        jdbc.update(
+                """
+                INSERT INTO geojson_import_backup(
+                    id,dataset_id,actor_id,target_fingerprint,payload_fingerprint,conflict_policy,snapshot_json)
+                SELECT ?,?,id,?,?,?,?::jsonb FROM app_user WHERE username=?
+                """,
+                backupId, datasetId, request.targetFingerprint(), request.payloadFingerprint(),
+                request.conflictPolicy(), backup.toString(), actor);
+
+        Map<String, JsonNode> target = featureIndex(backup.path("features"));
+        Map<String, JsonNode> incoming = analysis.incoming();
+        int created = 0;
+        int updated = 0;
+        int unchanged = 0;
+        int keptLocal = 0;
+        for (String type : IMPORT_ORDER) {
+            for (Map.Entry<String, JsonNode> entry : incoming.entrySet()) {
+                if (!entry.getKey().startsWith(type + ":")) continue;
+                JsonNode existing = target.get(entry.getKey());
+                if (existing != null && existing.equals(entry.getValue())) {
+                    unchanged++;
+                    continue;
+                }
+                if (existing != null && "KEEP_TARGET".equals(request.conflictPolicy())) {
+                    keptLocal++;
+                    continue;
+                }
+                upsertImportedFeature(datasetId, entry.getValue(), actor);
+                if (existing == null) created++;
+                else updated++;
+            }
+        }
+        audit(actor, "GEOJSON_FORMAL_IMPORT", "DATASET", datasetId.toString());
+        return new MapDtos.ImportApplyResult(backupId, created, updated, unchanged, keptLocal);
+    }
+
+    private ImportAnalysis analyzeImport(DatasetView dataset, JsonNode root) {
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        if (!"FeatureCollection".equals(root.path("type").asText())) errors.add("必须是 FeatureCollection");
+        if (root.path("schemaVersion").asInt() != 2) errors.add("Formal 同步文件必须使用 schemaVersion=2");
+        if (!dataset.code().equals(root.path("datasetCode").asText())) errors.add("datasetCode 与目标数据集不一致");
+        if (!dataset.coordinateSystem().equals(root.path("coordinateSystem").asText())) {
+            errors.add("坐标系必须为 " + dataset.coordinateSystem());
+        }
+        JsonNode features = root.path("features");
+        if (!features.isArray()) errors.add("features 必须是数组");
+        else if (features.size() > 2000) errors.add("features 最多允许 2000 项");
+
+        JsonNode targetExport = exportGeoJson(dataset.id());
+        Map<String, JsonNode> target = featureIndex(targetExport.path("features"));
+        Map<String, JsonNode> incoming = new LinkedHashMap<>();
+        if (features.isArray() && features.size() <= 2000) {
+            int index = 0;
+            for (JsonNode feature : features) {
+                validateFeature(feature, index++, incoming, errors);
+            }
+        }
+        validateReferences(incoming, target, errors);
+
+        Map<String, MapDtos.ImportTypeSummary> summaries = new LinkedHashMap<>();
+        List<String> conflicts = new ArrayList<>();
+        for (String type : IMPORT_ORDER) {
+            int creates = 0;
+            int unchanged = 0;
+            int changed = 0;
+            for (Map.Entry<String, JsonNode> entry : incoming.entrySet()) {
+                if (!entry.getKey().startsWith(type + ":")) continue;
+                JsonNode existing = target.get(entry.getKey());
+                if (existing == null) creates++;
+                else if (existing.equals(entry.getValue())) unchanged++;
+                else {
+                    changed++;
+                    if (conflicts.size() < 20) conflicts.add(entry.getKey());
+                }
+            }
+            summaries.put(type, new MapDtos.ImportTypeSummary(creates, unchanged, changed));
+        }
+        warnings.add("本次为合并导入，文件中缺失的本地对象不会被删除");
+        if (!conflicts.isEmpty()) warnings.add("存在同编号但内容不同的对象，应用时必须选择保留或覆盖");
+        return new ImportAnalysis(fingerprint(targetExport), summaries, conflicts, errors, warnings, incoming);
+    }
+
+    private void validateFeature(
+            JsonNode feature, int index, Map<String, JsonNode> incoming, List<String> errors) {
+        JsonNode properties = feature.path("properties");
+        String type = properties.path("entityType").asText();
+        String externalId = properties.path("externalId").asText();
+        String label = "features[" + index + "]";
+        if (!IMPORT_TYPES.contains(type)) {
+            errors.add(label + " entityType 不受支持");
+            return;
+        }
+        if (externalId.isBlank() || externalId.length() > 64) {
+            errors.add(label + " externalId 不能为空且最多 64 字符");
+            return;
+        }
+        String key = type + ":" + externalId;
+        if (incoming.putIfAbsent(key, feature) != null) errors.add("存在重复对象：" + key);
+        String expectedGeometry = "BUILDING".equals(type) ? "Polygon" : "EDGE".equals(type) ? "LineString" : "Point";
+        JsonNode geometry = feature.path("geometry");
+        if (!expectedGeometry.equals(geometry.path("type").asText())
+                || !validCoordinates(geometry.path("coordinates"))) {
+            errors.add(key + " geometry 必须是有效的 " + expectedGeometry);
+        }
+        JsonNode coordinates = geometry.path("coordinates");
+        if ("EDGE".equals(type) && (!coordinates.isArray() || coordinates.size() < 2)) {
+            errors.add(key + " LineString 至少需要两个坐标");
+        }
+        if (!"NODE".equals(type) && !"EDGE".equals(type)
+                && properties.path("name").asText().isBlank()) {
+            errors.add(key + " name 不能为空");
+        }
+        validateProperties(type, key, properties, errors);
+    }
+
+    private void validateProperties(String type, String key, JsonNode properties, List<String> errors) {
+        if (properties.has("dataSource")) validateAllowed(key, properties, "dataSource", errors,
+                "DEMO_GENERATED", "PUBLIC_SOURCE", "MANUAL_ESTIMATE", "FIELD_VERIFIED", "UNVERIFIED");
+        if (properties.has("confidenceLevel")) validateAllowed(key, properties, "confidenceLevel", errors,
+                "HIGH", "MEDIUM", "LOW", "UNKNOWN");
+        switch (type) {
+            case "NODE" -> validateAllowed(key, properties, "nodeType", errors,
+                    "INTERSECTION", "ENTRANCE", "WAYPOINT", "FACILITY_CONNECTOR");
+            case "EDGE" -> {
+                validateAllowed(key, properties, "slopeLevel", errors, "FLAT", "GENTLE", "MODERATE", "STEEP", "UNKNOWN");
+                validateAllowed(key, properties, "widthLevel", errors, "NARROW", "STANDARD", "WIDE", "UNKNOWN");
+                validateAllowed(key, properties, "surfaceType", errors, "ASPHALT", "CONCRETE", "BRICK", "GRAVEL", "DIRT", "UNKNOWN");
+                validateAllowed(key, properties, "lightingLevel", errors, "NONE", "LOW", "MEDIUM", "HIGH", "UNKNOWN");
+                validateAllowed(key, properties, "status", errors, "ACTIVE", "INACTIVE", "CLOSED", "BLOCKED");
+                validateAllowed(key, properties, "riskLevel", errors, "LOW", "MEDIUM", "HIGH", "UNKNOWN");
+                if (properties.path("fromNodeExternalId").asText().isBlank()
+                        || properties.path("toNodeExternalId").asText().isBlank()) {
+                    errors.add(key + " 必须提供道路起终点 externalId");
+                }
+            }
+            case "ENTRANCE" -> validateAllowed(key, properties, "status", errors, "OPEN", "CLOSED", "UNKNOWN");
+            case "FACILITY" -> {
+                validateAllowed(key, properties, "facilityType", errors,
+                        "ACCESSIBLE_ENTRANCE", "RAMP", "ELEVATOR", "ACCESSIBLE_TOILET", "REST_AREA",
+                        "ACCESSIBLE_PARKING", "DROP_OFF_POINT", "TRANSIT_BOARDING_POINT");
+                validateAllowed(key, properties, "openStatus", errors, "OPEN", "CLOSED", "UNKNOWN");
+            }
+            case "BARRIER" -> {
+                validateAllowed(key, properties, "barrierType", errors,
+                        "STAIRS", "CONSTRUCTION", "TEMPORARY_CLOSURE", "DAMAGED_SURFACE", "NARROW_PATH",
+                        "VEHICLE_BLOCKING", "STEEP_SLOPE", "ELEVATOR_OUTAGE", "ENTRANCE_CLOSED", "WATERLOGGING");
+                validateAllowed(key, properties, "reviewStatus", errors,
+                        "PENDING", "NEEDS_VERIFICATION", "APPROVED", "REJECTED");
+            }
+            default -> {
+                // BUILDING 只需要通用字段和 Polygon。
+            }
+        }
+    }
+
+    private void validateAllowed(
+            String key, JsonNode properties, String field, List<String> errors, String... allowed) {
+        String value = properties.path(field).asText();
+        if (!Set.of(allowed).contains(value)) errors.add(key + " 的 " + field + " 不合法");
+    }
+
+    private void validateReferences(
+            Map<String, JsonNode> incoming, Map<String, JsonNode> target, List<String> errors) {
+        Set<String> nodes = referencedExternalIds("NODE", incoming, target);
+        Set<String> buildings = referencedExternalIds("BUILDING", incoming, target);
+        for (Map.Entry<String, JsonNode> entry : incoming.entrySet()) {
+            JsonNode properties = entry.getValue().path("properties");
+            if (entry.getKey().startsWith("EDGE:")) {
+                for (String field : List.of("fromNodeExternalId", "toNodeExternalId")) {
+                    String reference = properties.path(field).asText();
+                    if (!nodes.contains(reference)) errors.add(entry.getKey() + " 引用了不存在的节点：" + reference);
+                }
+            }
+            if (entry.getKey().startsWith("ENTRANCE:")
+                    || entry.getKey().startsWith("FACILITY:") && properties.hasNonNull("buildingExternalId")) {
+                String reference = properties.path("buildingExternalId").asText();
+                if (!buildings.contains(reference)) errors.add(entry.getKey() + " 引用了不存在的建筑：" + reference);
+            }
+        }
+    }
+
+    private Set<String> referencedExternalIds(
+            String type, Map<String, JsonNode> incoming, Map<String, JsonNode> target) {
+        Set<String> values = new LinkedHashSet<>();
+        for (String key : incoming.keySet()) if (key.startsWith(type + ":")) values.add(key.substring(type.length() + 1));
+        for (String key : target.keySet()) if (key.startsWith(type + ":")) values.add(key.substring(type.length() + 1));
+        return values;
+    }
+
+    private void upsertImportedFeature(UUID datasetId, JsonNode feature, String actor) {
+        JsonNode properties = feature.path("properties");
+        String type = properties.path("entityType").asText();
+        String externalId = requiredText(properties, "externalId");
+        JsonNode coordinates = feature.path("geometry").path("coordinates");
+        switch (type) {
+            case "BUILDING" -> jdbc.update(
+                    """
+                    INSERT INTO building(id,dataset_id,external_id,name,category,active,data_source,confidence_level,geom)
+                    VALUES (?,?,?,?,?,?,?, ?, ST_SetSRID(ST_GeomFromGeoJSON(?),0))
+                    ON CONFLICT(dataset_id,external_id) DO UPDATE SET name=EXCLUDED.name,
+                      category=EXCLUDED.category,active=EXCLUDED.active,data_source=EXCLUDED.data_source,
+                      confidence_level=EXCLUDED.confidence_level,geom=EXCLUDED.geom,updated_at=CURRENT_TIMESTAMP
+                    """,
+                    UUID.randomUUID(), datasetId, externalId, requiredText(properties, "name"),
+                    properties.path("category").asText("OTHER"), properties.path("active").asBoolean(true),
+                    importedDataSource(properties), importedConfidence(properties), feature.path("geometry").toString());
+            case "NODE" -> {
+                UUID nodeId = saveNode(datasetId, null, new NodeRequest(
+                        externalId, nullableText(properties, "name"),
+                        properties.path("nodeType").asText("INTERSECTION"),
+                        properties.path("active").asBoolean(true), coordinate(coordinates)), actor);
+                jdbc.update("UPDATE route_node SET data_source=?,confidence_level=? WHERE id=?",
+                        importedDataSource(properties), importedConfidence(properties), nodeId);
+            }
+            case "ENTRANCE" -> {
+                UUID buildingId = buildingIdByExternal(datasetId, requiredText(properties, "buildingExternalId"));
+                Coordinate point = coordinate(coordinates);
+                jdbc.update(
+                        """
+                        INSERT INTO building_entrance(id,dataset_id,building_id,external_id,name,accessible,
+                          entrance_type,status,active,data_source,confidence_level,geom)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,ST_SetSRID(ST_MakePoint(?,?),0))
+                        ON CONFLICT(dataset_id,external_id) DO UPDATE SET building_id=EXCLUDED.building_id,
+                          name=EXCLUDED.name,accessible=EXCLUDED.accessible,entrance_type=EXCLUDED.entrance_type,
+                          status=EXCLUDED.status,active=EXCLUDED.active,geom=EXCLUDED.geom,updated_at=CURRENT_TIMESTAMP
+                        """,
+                        UUID.randomUUID(), datasetId, buildingId, externalId, requiredText(properties, "name"),
+                        properties.path("accessible").asBoolean(false),
+                        properties.path("entranceType").asText("MAIN"), properties.path("status").asText("UNKNOWN"),
+                        properties.path("active").asBoolean(true), MANUAL, UNKNOWN, point.lng(), point.lat());
+            }
+            case "FACILITY" -> {
+                UUID buildingId = properties.hasNonNull("buildingExternalId")
+                        ? buildingIdByExternal(datasetId, properties.path("buildingExternalId").asText()) : null;
+                Coordinate point = coordinate(coordinates);
+                jdbc.update(
+                        """
+                        INSERT INTO accessible_facility(id,dataset_id,building_id,external_id,name,facility_type,
+                          floor_label,open_status,description,active,data_source,confidence_level,geom)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,ST_SetSRID(ST_MakePoint(?,?),0))
+                        ON CONFLICT(dataset_id,external_id) DO UPDATE SET building_id=EXCLUDED.building_id,
+                          name=EXCLUDED.name,facility_type=EXCLUDED.facility_type,floor_label=EXCLUDED.floor_label,
+                          open_status=EXCLUDED.open_status,description=EXCLUDED.description,active=EXCLUDED.active,
+                          data_source=EXCLUDED.data_source,confidence_level=EXCLUDED.confidence_level,
+                          geom=EXCLUDED.geom,updated_at=CURRENT_TIMESTAMP
+                        """,
+                        UUID.randomUUID(), datasetId, buildingId, externalId, requiredText(properties, "name"),
+                        requiredText(properties, "facilityType"), nullableText(properties, "floorLabel"),
+                        properties.path("openStatus").asText("UNKNOWN"), nullableText(properties, "description"),
+                        properties.path("active").asBoolean(true), importedDataSource(properties),
+                        importedConfidence(properties), point.lng(), point.lat());
+            }
+            case "EDGE" -> {
+                UUID from = nodeIdByExternal(datasetId, requiredText(properties, "fromNodeExternalId"));
+                UUID to = nodeIdByExternal(datasetId, requiredText(properties, "toNodeExternalId"));
+                List<Coordinate> intermediate = new ArrayList<>();
+                for (int index = 1; index < coordinates.size() - 1; index++) {
+                    intermediate.add(coordinate(coordinates.get(index)));
+                }
+                EdgeRequest edge = new EdgeRequest(
+                        externalId, nullableText(properties, "name"), from, to, BigDecimal.ONE,
+                        properties.path("slopeLevel").asText("UNKNOWN"),
+                        properties.path("hasStairs").asBoolean(false), properties.path("stairsCount").asInt(0),
+                        properties.path("widthLevel").asText("UNKNOWN"),
+                        properties.path("surfaceType").asText("UNKNOWN"),
+                        properties.path("lightingLevel").asText("UNKNOWN"),
+                        properties.path("bidirectional").asBoolean(true),
+                        properties.path("status").asText("ACTIVE"),
+                        properties.path("riskLevel").asText("UNKNOWN"), intermediate);
+                UUID edgeId = saveEdge(datasetId, optionalEdgeId(datasetId, externalId), edge, actor);
+                jdbc.update("UPDATE route_edge SET data_source=?,confidence_level=? WHERE id=?",
+                        importedDataSource(properties), importedConfidence(properties), edgeId);
+            }
+            case "BARRIER" -> {
+                Coordinate point = coordinate(coordinates);
+                jdbc.update(
+                        """
+                        INSERT INTO barrier_report(id,dataset_id,external_id,title,barrier_type,description,
+                          review_status,active,data_source,confidence_level,geom)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,ST_SetSRID(ST_MakePoint(?,?),0))
+                        ON CONFLICT(dataset_id,external_id) DO UPDATE SET title=EXCLUDED.title,
+                          barrier_type=EXCLUDED.barrier_type,description=EXCLUDED.description,
+                          review_status=EXCLUDED.review_status,active=EXCLUDED.active,
+                          data_source=EXCLUDED.data_source,confidence_level=EXCLUDED.confidence_level,
+                          geom=EXCLUDED.geom,updated_at=CURRENT_TIMESTAMP
+                        """,
+                        UUID.randomUUID(), datasetId, externalId, requiredText(properties, "name"),
+                        requiredText(properties, "barrierType"), nullableText(properties, "description"),
+                        properties.path("reviewStatus").asText("PENDING"), properties.path("active").asBoolean(false),
+                        importedDataSource(properties), importedConfidence(properties), point.lng(), point.lat());
+            }
+            default -> throw badRequest("不支持的 entityType：" + type);
+        }
+    }
+
+    private String importedDataSource(JsonNode properties) {
+        String value = properties.path("dataSource").asText(MANUAL);
+        return "USER_REPORT".equals(value) ? MANUAL : value;
+    }
+
+    private String importedConfidence(JsonNode properties) {
+        return properties.path("confidenceLevel").asText(UNKNOWN);
+    }
+
+    private Coordinate coordinate(JsonNode coordinates) {
+        return new Coordinate(coordinates.get(0).asDouble(), coordinates.get(1).asDouble());
+    }
+
+    private UUID buildingIdByExternal(UUID datasetId, String externalId) {
+        List<UUID> values = jdbc.query(
+                "SELECT id FROM building WHERE dataset_id=? AND external_id=?",
+                (rs, row) -> rs.getObject(1, UUID.class), datasetId, externalId);
+        if (values.isEmpty()) throw badRequest("引用了不存在的建筑：" + externalId);
+        return values.getFirst();
+    }
+
+    private Map<String, JsonNode> featureIndex(JsonNode features) {
+        Map<String, JsonNode> values = new LinkedHashMap<>();
+        if (!features.isArray()) return values;
+        for (JsonNode feature : features) {
+            JsonNode properties = feature.path("properties");
+            String type = properties.path("entityType").asText();
+            String externalId = properties.path("externalId").asText();
+            if (!type.isBlank() && !externalId.isBlank()) values.put(type + ":" + externalId, feature);
+        }
+        return values;
+    }
+
+    private boolean validCoordinates(JsonNode coordinates) {
+        if (!coordinates.isArray() || coordinates.isEmpty()) return false;
+        if (coordinates.size() >= 2 && coordinates.get(0).isNumber() && coordinates.get(1).isNumber()) {
+            double lng = coordinates.get(0).asDouble();
+            double lat = coordinates.get(1).asDouble();
+            return Double.isFinite(lng) && Double.isFinite(lat)
+                    && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
+        }
+        for (JsonNode child : coordinates) if (!validCoordinates(child)) return false;
+        return true;
+    }
+
+    private String fingerprint(JsonNode value) {
+        JsonNode normalized = value.deepCopy();
+        if (normalized instanceof ObjectNode object) object.remove("exportedAt");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(objectMapper.writeValueAsBytes(normalized)));
+        } catch (NoSuchAlgorithmException | JsonProcessingException exception) {
+            throw new IllegalStateException("无法计算 GeoJSON 指纹", exception);
+        }
     }
 
     private void createOrUpdateImportedFacility(UUID datasetId, JsonNode props, JsonNode coordinate, String actor) {
@@ -558,6 +985,12 @@ public class MapDataService {
                 .orElseThrow(() -> new IllegalStateException("道路引用节点缺失"));
     }
 
+    private String externalBuildingId(List<BuildingView> buildings, UUID id) {
+        return buildings.stream().filter(building -> building.id().equals(id)).findFirst()
+                .map(BuildingView::externalId)
+                .orElseThrow(() -> new IllegalStateException("对象引用建筑缺失"));
+    }
+
     private String lineStringWkt(List<Coordinate> points) {
         String coordinates = points.stream()
                 .map(point -> String.format(Locale.ROOT, "%.8f %.8f", point.lng(), point.lat()))
@@ -605,5 +1038,14 @@ public class MapDataService {
     }
 
     private record Bounds(double minLng, double minLat, double maxLng, double maxLat) {
+    }
+
+    private record ImportAnalysis(
+            String targetFingerprint,
+            Map<String, MapDtos.ImportTypeSummary> summaries,
+            List<String> conflictSamples,
+            List<String> errors,
+            List<String> warnings,
+            Map<String, JsonNode> incoming) {
     }
 }

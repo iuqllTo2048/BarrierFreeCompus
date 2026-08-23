@@ -1769,6 +1769,83 @@ h2 {
 .edge-editor-actions {
   justify-content: start;
 }
+.geojson-import-preview {
+  display: grid;
+  gap: 16px;
+}
+.import-target {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+.import-target strong {
+  color: var(--color-text);
+}
+.merge-safety-note {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 9%, var(--color-surface));
+  border-left: 3px solid var(--color-success);
+  border-radius: 8px;
+}
+.import-summary {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.import-summary__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.6fr) repeat(3, minmax(64px, 1fr));
+  min-height: 40px;
+  border-top: 1px solid var(--color-border);
+}
+.import-summary__row:first-child {
+  border-top: 0;
+}
+.import-summary__row > * {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  border-left: 1px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+.import-summary__row > :first-child {
+  border-left: 0;
+}
+.import-summary__head {
+  color: var(--color-text-secondary);
+  background: var(--color-surface-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.import-message-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.conflict-policy-fieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.conflict-policy-fieldset legend {
+  padding: 0 4px;
+  color: var(--color-text);
+  font-weight: 600;
+}
+.conflict-policy-fieldset .el-radio-group {
+  display: grid;
+  gap: 8px;
+}
+.conflict-policy-fieldset p {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .visually-hidden {
   position: absolute !important;
   width: 1px !important;

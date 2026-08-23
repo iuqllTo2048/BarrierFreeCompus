@@ -40,9 +40,11 @@
 | POST | `/datasets/{datasetId}/entrances` | 新增入口 |
 | POST | `/datasets/{datasetId}/facilities` | 新增设施 |
 | POST | `/datasets/{datasetId}/barriers` | 新增障碍 |
-| GET / POST | `/datasets/{datasetId}/geojson` | 导出或校验后幂等导入 Demo GeoJSON |
+| GET / POST | `/datasets/{datasetId}/geojson` | 导出 GeoJSON v2；POST 保留旧 Demo 幂等导入兼容 |
+| POST | `/datasets/{datasetId}/geojson/preview` | 只读预检 Formal GeoJSON v2，返回统计、错误、冲突样例和双指纹 |
+| POST | `/datasets/{datasetId}/geojson/apply` | 使用预检双指纹与 `KEEP_TARGET/OVERWRITE` 策略安全合并 |
 
-GeoJSON 导入仅接受 Demo 数据集的 node、edge、facility；要求 `FeatureCollection`、匹配的 `datasetId`、`coordinateSystem=GCJ02`，道路端点必须存在。地图写操作写入审计日志。
+GeoJSON v2 导出六类可共享地图对象，不包含普通用户上报与用户业务数据。Formal 文件必须为 `FeatureCollection`、`schemaVersion=2`、匹配 `datasetCode` 且声明 `coordinateSystem=GCJ02`；道路端点和建筑引用必须可解析。应用为不删除本地缺失对象的单事务 MERGE，应用前保存 JSONB 快照并校验目标没有在预检后变化。地图写操作写入审计日志。
 
 ## 4. 用户业务
 

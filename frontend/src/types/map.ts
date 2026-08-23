@@ -158,9 +158,37 @@ export interface PointCreateRequest {
 
 export interface GeoJsonFeatureCollection {
   type: 'FeatureCollection';
+  schemaVersion?: number;
   datasetId: string;
+  datasetCode?: string;
   coordinateSystem: CoordinateSystem;
+  exportedAt?: string;
   features: unknown[];
+}
+
+export type GeoJsonEntityType = 'BUILDING' | 'NODE' | 'ENTRANCE' | 'FACILITY' | 'EDGE' | 'BARRIER';
+
+export interface GeoJsonImportTypeSummary {
+  creates: number;
+  unchanged: number;
+  conflicts: number;
+}
+
+export interface GeoJsonImportPreview {
+  payloadFingerprint: string;
+  targetFingerprint: string;
+  summaries: Record<GeoJsonEntityType, GeoJsonImportTypeSummary>;
+  conflictSamples: string[];
+  errors: string[];
+  warnings: string[];
+}
+
+export interface GeoJsonImportResult {
+  backupId: string;
+  created: number;
+  updated: number;
+  unchanged: number;
+  keptLocal: number;
 }
 
 export type MobilityMode =

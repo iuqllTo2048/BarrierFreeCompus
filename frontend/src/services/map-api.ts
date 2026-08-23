@@ -4,6 +4,8 @@ import type {
   DatasetView,
   EdgeRequest,
   GeoJsonFeatureCollection,
+  GeoJsonImportPreview,
+  GeoJsonImportResult,
   MapSnapshot,
   NodeRequest,
   PointCreateRequest,
@@ -80,5 +82,34 @@ export async function importGeoJson(
   const response = await http.post<
     ApiResponse<{ nodes: number; edges: number; facilities: number }>
   >(`/admin/map/datasets/${datasetId}/geojson`, payload);
+  return response.data.data;
+}
+
+export async function previewGeoJson(
+  datasetId: string,
+  payload: GeoJsonFeatureCollection,
+): Promise<GeoJsonImportPreview> {
+  const response = await http.post<ApiResponse<GeoJsonImportPreview>>(
+    `/admin/map/datasets/${datasetId}/geojson/preview`,
+    payload,
+  );
+  return response.data.data;
+}
+
+export async function applyGeoJson(
+  datasetId: string,
+  payload: GeoJsonFeatureCollection,
+  preview: GeoJsonImportPreview,
+  conflictPolicy: 'KEEP_TARGET' | 'OVERWRITE',
+): Promise<GeoJsonImportResult> {
+  const response = await http.post<ApiResponse<GeoJsonImportResult>>(
+    `/admin/map/datasets/${datasetId}/geojson/apply`,
+    {
+      geoJson: payload,
+      conflictPolicy,
+      payloadFingerprint: preview.payloadFingerprint,
+      targetFingerprint: preview.targetFingerprint,
+    },
+  );
   return response.data.data;
 }

@@ -181,11 +181,121 @@ class MapDataIntegrationTest {
 
         assertThat(geoJson.path("type").asText()).isEqualTo("FeatureCollection");
         assertThat(geoJson.path("coordinateSystem").asText()).isEqualTo("GCJ02");
-        assertThat(geoJson.path("features")).hasSize(66);
+        assertThat(geoJson.path("schemaVersion").asInt()).isEqualTo(2);
+        assertThat(geoJson.path("features")).hasSize(81);
         assertThat(imported).isEqualTo(new MapDtos.ImportResult(20, 31, 15));
         assertThat(jdbcTemplate.queryForObject(
                         "SELECT COUNT(*) FROM route_edge WHERE dataset_id = ?", Integer.class, DEMO_DATASET_ID))
                 .isEqualTo(31);
+    }
+
+    @Test
+    void shouldPreviewAndApplyFormalGeoJsonWithBackup() {
+        mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("SYNC-N-01", "同步节点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        JsonNode payload = mapDataService.exportGeoJson(SCHOOL_DATASET_ID);
+        jdbcTemplate.update("DELETE FROM route_node WHERE dataset_id=? AND external_id='SYNC-N-01'", SCHOOL_DATASET_ID);
+
+        MapDtos.ImportPreview preview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        assertThat(preview.errors()).isEmpty();
+        assertThat(preview.summaries().get("NODE").creates()).isEqualTo(1);
+
+        MapDtos.ImportApplyResult result = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "KEEP_TARGET",
+                        preview.payloadFingerprint(), preview.targetFingerprint()),
+                "demo_admin");
+
+        assertThat(result.created()).isEqualTo(1);
+        assertThat(result.updated()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_node WHERE dataset_id=? AND external_id='SYNC-N-01'",
+                Integer.class, SCHOOL_DATASET_ID)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM geojson_import_backup WHERE id=?", Integer.class, result.backupId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE action='GEOJSON_FORMAL_IMPORT'", Integer.class)).isPositive();
+    }
+
+    @Test
+    void shouldApplyAllShareableGeoJsonEntityTypesToFormalDataset() {
+        com.fasterxml.jackson.databind.node.ObjectNode payload =
+                (com.fasterxml.jackson.databind.node.ObjectNode) mapDataService.exportGeoJson(DEMO_DATASET_ID);
+        payload.put("datasetId", SCHOOL_DATASET_ID.toString());
+        payload.put("datasetCode", "SCHOOL_EXAMPLE_V1");
+
+        MapDtos.ImportPreview preview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        assertThat(preview.errors()).isEmpty();
+        assertThat(preview.summaries().get("BUILDING").creates()).isEqualTo(5);
+        assertThat(preview.summaries().get("ENTRANCE").creates()).isEqualTo(5);
+        assertThat(preview.summaries().get("BARRIER").creates()).isEqualTo(5);
+
+        MapDtos.ImportApplyResult result = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "OVERWRITE",
+                        preview.payloadFingerprint(), preview.targetFingerprint()),
+                "demo_admin");
+        assertThat(result.created()).isEqualTo(81);
+        assertDatasetEntityCount("building", 5);
+        assertDatasetEntityCount("building_entrance", 5);
+        assertDatasetEntityCount("route_node", 20);
+        assertDatasetEntityCount("route_edge", 31);
+        assertDatasetEntityCount("accessible_facility", 15);
+        assertDatasetEntityCount("barrier_report", 5);
+    }
+
+    @Test
+    void shouldKeepOrOverwriteFormalGeoJsonConflictExplicitly() {
+        UUID nodeId = mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("SYNC-CONFLICT", "文件版本", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        JsonNode payload = mapDataService.exportGeoJson(SCHOOL_DATASET_ID);
+        mapDataService.saveNode(SCHOOL_DATASET_ID, nodeId,
+                new MapDtos.NodeRequest("SYNC-CONFLICT", "本地版本", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.696000, 31.535000)), "demo_admin");
+
+        MapDtos.ImportPreview keepPreview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        assertThat(keepPreview.summaries().get("NODE").conflicts()).isEqualTo(1);
+        MapDtos.ImportApplyResult kept = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "KEEP_TARGET",
+                        keepPreview.payloadFingerprint(), keepPreview.targetFingerprint()),
+                "demo_admin");
+        assertThat(kept.keptLocal()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT name FROM route_node WHERE id=?", String.class, nodeId)).isEqualTo("本地版本");
+
+        MapDtos.ImportPreview overwritePreview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        MapDtos.ImportApplyResult overwritten = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "OVERWRITE",
+                        overwritePreview.payloadFingerprint(), overwritePreview.targetFingerprint()),
+                "demo_admin");
+        assertThat(overwritten.updated()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT name FROM route_node WHERE id=?", String.class, nodeId)).isEqualTo("文件版本");
+    }
+
+    @Test
+    void shouldRejectStaleFormalGeoJsonPreviewAndInvalidDatasetCode() {
+        JsonNode payload = mapDataService.exportGeoJson(SCHOOL_DATASET_ID);
+        MapDtos.ImportPreview preview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("SYNC-STALE", "并发修改", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> mapDataService.applyGeoJson(
+                        SCHOOL_DATASET_ID,
+                        new MapDtos.ImportApplyRequest(payload, "KEEP_TARGET",
+                                preview.payloadFingerprint(), preview.targetFingerprint()),
+                        "demo_admin"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("目标数据集已发生变化");
+
+        ((com.fasterxml.jackson.databind.node.ObjectNode) payload).put("datasetCode", "OTHER_DATASET");
+        assertThat(mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload).errors())
+                .contains("datasetCode 与目标数据集不一致");
     }
 
     @Test
@@ -768,6 +878,12 @@ class MapDataIntegrationTest {
     private AnalyticsFilter analyticsFilter() {
         return new AnalyticsFilter(DEMO_DATASET_ID, null, LocalDate.now().minusDays(29),
                 LocalDate.now(), null, null, null);
+    }
+
+    private void assertDatasetEntityCount(String table, int expected) {
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + table + " WHERE dataset_id=?",
+                Integer.class, SCHOOL_DATASET_ID)).isEqualTo(expected);
     }
 
     private String cookieValue(String setCookie, String name) {

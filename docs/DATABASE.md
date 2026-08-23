@@ -2,7 +2,7 @@
 
 ## 1. 基本信息
 
-- PostgreSQL 17 + PostGIS 3.5；schema 只由 Flyway 管理，当前版本 V7。
+- PostgreSQL 17 + PostGIS 3.5；schema 只由 Flyway 管理，当前版本 V9。
 - 高德侧坐标为 GCJ-02。PostGIS 没有原生 GCJ-02 EPSG 编码，几何列统一使用 SRID 0。
 - 坐标语义由 `dataset.coordinate_system=GCJ02` 明确保存，GeoJSON 同时携带 `coordinateSystem`，禁止声明为 EPSG:4326/WGS84。
 - 地图快照通过 GIST 索引和 `geom && ST_MakeEnvelope(..., 0)` 做真实空间范围过滤。
@@ -20,8 +20,9 @@
 | 路线 | `route_history`、`route_favorite` | 结构化请求/结果 JSONB、用户收藏 |
 | 配置 | `system_setting` | 障碍匹配和调度等白名单运行设置 |
 | 智能体 | `ai_conversation`、`ai_message`、`ai_invocation_log`、`ai_tool_log`、`ai_action_draft` | 可见对话、脱敏调用/Tool 日志和两小时草稿 |
+| 导入安全 | `geojson_import_backup` | Formal 合并前的目标快照、文件/目标指纹、冲突策略与操作者 |
 
-所有核心地图/业务对象都保存 `dataset_id`。Demo 与 Formal 通过 `dataset.is_demo` 与数据集外键隔离；管理 GeoJSON 导入和一键重置只允许 Demo。
+所有核心地图/业务对象都保存 `dataset_id`。Demo 与 Formal 通过 `dataset.is_demo` 与数据集外键隔离；一键重置只允许 Demo。旧 GeoJSON v1 导入仍只允许 Demo；Formal 仅通过 v2 预检与安全合并接口写入。
 
 ## 3. 路网属性
 
@@ -53,5 +54,14 @@
 | V6 | `V6__business_workflow.sql` | 资料、互动、上报、历史/收藏、设置与业务审计 |
 | V7 | `V7__agent_assistant.sql` | 对话、消息、调用/Tool 日志和操作草稿 |
 | V8 | `V8__add_blank_school_example_dataset.sql` | 新增空白学校示例校园 Formal 数据集并停用旧 Demo |
+| V9 | `V9__add_geojson_import_backup.sql` | 保存 Formal GeoJSON 合并前快照、双指纹、策略与操作者 |
 
 已执行迁移不允许回写；后续 schema 变更必须新增迁移。备份和恢复应包含数据库卷或 PostgreSQL 逻辑备份，不能只复制前端文件。
+
+## 6. Formal GeoJSON 合并语义
+
+- 导出 v2 包含 BUILDING、ENTRANCE、NODE、EDGE、FACILITY、BARRIER；`USER_REPORT` 障碍及用户业务数据不导出。
+- 应用只新增或处理同类型同 `externalId` 对象，不因文件缺失而删除本地记录。
+- 冲突策略为 `KEEP_TARGET` 或 `OVERWRITE`；默认保留目标数据。
+- 应用前重新计算文件与目标指纹，目标变化时拒绝写入；备份、六类对象写入与审计在单事务内完成。
+- `geojson_import_backup` 是导入前安全快照，目前不提供界面一键恢复；生产级恢复仍应以数据库备份为准。

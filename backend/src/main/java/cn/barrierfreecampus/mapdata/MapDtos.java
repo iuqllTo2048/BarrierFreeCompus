@@ -12,6 +12,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public final class MapDtos {
@@ -67,6 +68,33 @@ public final class MapDtos {
     }
 
     public record ImportResult(int nodes, int edges, int facilities) {
+    }
+
+    public record ImportTypeSummary(int creates, int unchanged, int conflicts) {
+    }
+
+    public record ImportPreview(
+            String payloadFingerprint,
+            String targetFingerprint,
+            Map<String, ImportTypeSummary> summaries,
+            List<String> conflictSamples,
+            List<String> errors,
+            List<String> warnings) {
+    }
+
+    public record ImportApplyRequest(
+            @NotNull JsonNode geoJson,
+            @NotBlank @Pattern(regexp = "KEEP_TARGET|OVERWRITE") String conflictPolicy,
+            @NotBlank @Size(max = 64) String payloadFingerprint,
+            @NotBlank @Size(max = 64) String targetFingerprint) {
+    }
+
+    public record ImportApplyResult(
+            UUID backupId,
+            int created,
+            int updated,
+            int unchanged,
+            int keptLocal) {
     }
 
     public record Coordinate(

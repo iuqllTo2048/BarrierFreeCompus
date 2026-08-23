@@ -127,4 +127,19 @@ public class AdminMapController {
             Authentication authentication) {
         return ApiResponse.ok(mapDataService.importGeoJson(datasetId, geoJson, authentication.getName()));
     }
+
+    @PostMapping("/datasets/{datasetId}/geojson/preview")
+    public ApiResponse<MapDtos.ImportPreview> previewGeoJson(
+            @PathVariable UUID datasetId,
+            @RequestBody JsonNode geoJson) {
+        return ApiResponse.ok(mapDataService.previewGeoJson(datasetId, geoJson));
+    }
+
+    @PostMapping("/datasets/{datasetId}/geojson/apply")
+    public ApiResponse<MapDtos.ImportApplyResult> applyGeoJson(
+            @PathVariable UUID datasetId,
+            @Valid @RequestBody MapDtos.ImportApplyRequest request,
+            Authentication authentication) {
+        return ApiResponse.ok(mapDataService.applyGeoJson(datasetId, request, authentication.getName()));
+    }
 }

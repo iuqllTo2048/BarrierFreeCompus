@@ -36,6 +36,32 @@ test('ADMIN 可查看停用旧数据并使用折线拐点撤销操作', async ({
   await expect(page.getByText('1 个拐点；起终点固定在道路节点')).toBeVisible();
 });
 
+test('ADMIN 可预检并安全合并 Formal GeoJSON', async ({ page }) => {
+  await login(page, 'ADMIN');
+  const payload = {
+    type: 'FeatureCollection',
+    schemaVersion: 2,
+    datasetId: '20000000-0000-0000-0000-000000000002',
+    datasetCode: 'SCHOOL_EXAMPLE_V1',
+    coordinateSystem: 'GCJ02',
+    exportedAt: new Date().toISOString(),
+    features: [],
+  };
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'school-example.geojson',
+    mimeType: 'application/geo+json',
+    buffer: Buffer.from(JSON.stringify(payload)),
+  });
+
+  const previewDialog = page.getByRole('dialog', { name: 'GeoJSON 安全导入预览' });
+  await expect(previewDialog).toBeVisible();
+  await expect(previewDialog.locator('.merge-safety-note')).toContainText(
+    '文件中缺失的本地对象不会被删除',
+  );
+  await page.getByRole('button', { name: '确认合并导入' }).click();
+  await expect(page.getByText(/导入完成：新增 0、更新 0/)).toBeVisible();
+});
+
 test('用户提交的脚本文本只按普通文字展示', async ({ page }) => {
   const xssTitle = `<img src=x onerror=alert(1)> ${Date.now()}`;
   const reportLng = (104.690359 + Math.random() * 0.01).toFixed(7);
