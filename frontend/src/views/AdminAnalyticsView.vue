@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, defineAsyncComponent, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
-import CampusMap from '../components/CampusMap.vue';
-import EChartPanel from '../components/EChartPanel.vue';
 import { useMapDataStore } from '../stores/map-data';
 import * as analyticsApi from '../services/analytics-api';
 import {
@@ -16,6 +14,10 @@ import {
 import { readApiMessage } from '../services/http';
 import { useTheme } from '../services/theme';
 import type { AnalyticsFilter, AnalyticsOverview, GovernanceSummary } from '../types/analytics';
+
+// 地图与图表按需异步加载，避免把高德与 ECharts 打进治理洞察首包
+const CampusMap = defineAsyncComponent(() => import('../components/CampusMap.vue'));
+const EChartPanel = defineAsyncComponent(() => import('../components/EChartPanel.vue'));
 
 const mapData = useMapDataStore();
 const { theme } = useTheme();
