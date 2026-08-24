@@ -19,6 +19,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# 本地数据库备份
+backups/
 *.pem
 *.key
 *.p12

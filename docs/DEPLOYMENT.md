@@ -68,7 +68,7 @@ docker compose down
 
 管理员需要恢复演示状态时，应在治理工作台点击“安全重置 Demo”并完成二次确认。后端只接受 `is_demo=true` 的数据集，只清理当前 Demo 业务数据并恢复种子对象；Formal 会被拒绝，审计日志保留。该操作与删除整个数据库卷不同。
 
-正式备份应使用 PostgreSQL 备份方案或部署平台卷快照。本地比赛 Compose 没有自动备份调度。
+数据库逻辑备份使用 `scripts/backup-db.ps1`（pg_dump 自定义格式，输出到 `backups/`，自动清理旧备份），恢复命令见 `启动说明.md`；正式备份还应使用 PostgreSQL 备份方案或部署平台卷快照。GeoJSON 文件仅用于地图对象协作，不作为完整数据库备份。
 
 ## 6. 健康检查与排障
 
@@ -89,6 +89,8 @@ Invoke-WebRequest -UseBasicParsing http://localhost:8080/
 ## 7. 独立开发
 
 后端可在 `backend/` 使用 `mvn spring-boot:run`，通过 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 和 `JWT_SECRET` 连接 PostgreSQL。前端在 `frontend/` 使用 `npm run dev`；Vite 从仓库根 `.env` 读取高德配置，并把 `/api` 与 `/_AMapService` 代理到正确目标。
+
+前端本地开发建议使用 Node 22（与 Docker 构建一致）：仓库已提供 `frontend/.nvmrc`；无 nvm 时可直接使用便携版 `D:\node22\node-v22.23.2-win-x64`，或自行安装 Node 22 LTS。
 
 ## 8. 隔离 E2E
 
