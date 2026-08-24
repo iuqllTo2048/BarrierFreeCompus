@@ -191,6 +191,37 @@ export interface GeoJsonImportResult {
   keptLocal: number;
 }
 
+export interface GeoJsonBackup {
+  id: string;
+  createdAt: string;
+  actorUsername: string | null;
+  conflictPolicy: 'KEEP_TARGET' | 'OVERWRITE';
+  targetFingerprint: string;
+  payloadFingerprint: string;
+  objectCounts: Record<GeoJsonEntityType, number>;
+}
+
+export interface GeoJsonRestorePreview {
+  backupId: string;
+  backupCreatedAt: string;
+  currentFingerprint: string;
+  snapshotFingerprint: string;
+  snapshotCounts: Record<GeoJsonEntityType, number>;
+  toDeleteCounts: Record<GeoJsonEntityType, number>;
+  keptBusinessCounts: Record<GeoJsonEntityType, number>;
+  warnings: string[];
+}
+
+export interface GeoJsonRestoreResult {
+  backupId: string;
+  created: Record<GeoJsonEntityType, number>;
+  updated: Record<GeoJsonEntityType, number>;
+  deleted: Record<GeoJsonEntityType, number>;
+  keptBusiness: Record<GeoJsonEntityType, number>;
+  warnings: string[];
+  restoredAt: string;
+}
+
 export type MobilityMode =
   'WHEELCHAIR' | 'CRUTCH' | 'TEMPORARY_INJURY' | 'CART_LUGGAGE' | 'WALKING';
 export type RouteProfile = 'SHORTEST' | 'ACCESSIBLE' | 'BALANCED';

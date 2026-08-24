@@ -1,6 +1,7 @@
 package cn.barrierfreecampus.mapdata;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -42,6 +43,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -884,6 +886,128 @@ class MapDataIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM " + table + " WHERE dataset_id=?",
                 Integer.class, SCHOOL_DATASET_ID)).isEqualTo(expected);
+    }
+
+    @Test
+    void shouldListPreviewAndRestoreFormalGeoJsonBackup() {
+        mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("RST-N-01", "恢复节点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        JsonNode payload = mapDataService.exportGeoJson(SCHOOL_DATASET_ID);
+        jdbcTemplate.update(
+                "DELETE FROM route_node WHERE dataset_id=? AND external_id='RST-N-01'", SCHOOL_DATASET_ID);
+
+        MapDtos.ImportPreview importPreview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        MapDtos.ImportApplyResult applied = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "KEEP_TARGET",
+                        importPreview.payloadFingerprint(), importPreview.targetFingerprint()),
+                "demo_admin");
+
+        List<MapDtos.GeoJsonBackupView> backups = mapDataService.listGeoJsonBackups(SCHOOL_DATASET_ID);
+        assertThat(backups).extracting(MapDtos.GeoJsonBackupView::id).contains(applied.backupId());
+        // 备份保存的是导入前快照：节点在导入前已被删除，因此快照不含节点
+        assertThat(backups.getFirst().objectCounts().get("NODE")).isZero();
+
+        MapDtos.RestorePreview restorePreview =
+                mapDataService.previewGeoJsonRestore(SCHOOL_DATASET_ID, applied.backupId());
+        assertThat(restorePreview.snapshotCounts().get("NODE")).isZero();
+        assertThat(restorePreview.toDeleteCounts().get("NODE")).isEqualTo(1);
+
+        mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("RST-EXTRA", "多余节点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695600, 31.535000)), "demo_admin");
+        MapDtos.RestorePreview changed =
+                mapDataService.previewGeoJsonRestore(SCHOOL_DATASET_ID, applied.backupId());
+        assertThat(changed.currentFingerprint()).isNotEqualTo(restorePreview.currentFingerprint());
+        assertThat(changed.toDeleteCounts().get("NODE")).isEqualTo(2);
+
+        MapDtos.RestoreResult result = mapDataService.restoreGeoJsonBackup(
+                SCHOOL_DATASET_ID, applied.backupId(),
+                new MapDtos.RestoreApplyRequest(changed.currentFingerprint()), "demo_admin");
+
+        assertThat(result.deleted().get("NODE")).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_node WHERE dataset_id=?", Integer.class, SCHOOL_DATASET_ID))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE action='GEOJSON_BACKUP_RESTORE'", Integer.class))
+                .isPositive();
+    }
+
+    @Test
+    void shouldRejectRestoreWhenDatasetChangedAfterPreview() {
+        mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("RST-N-02", "恢复节点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        JsonNode payload = mapDataService.exportGeoJson(SCHOOL_DATASET_ID);
+        jdbcTemplate.update(
+                "DELETE FROM route_node WHERE dataset_id=? AND external_id='RST-N-02'", SCHOOL_DATASET_ID);
+        MapDtos.ImportPreview importPreview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        MapDtos.ImportApplyResult applied = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "KEEP_TARGET",
+                        importPreview.payloadFingerprint(), importPreview.targetFingerprint()),
+                "demo_admin");
+
+        MapDtos.RestorePreview restorePreview =
+                mapDataService.previewGeoJsonRestore(SCHOOL_DATASET_ID, applied.backupId());
+        mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("RST-EXTRA-2", "多余节点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695700, 31.535000)), "demo_admin");
+
+        assertThatThrownBy(() -> mapDataService.restoreGeoJsonBackup(
+                SCHOOL_DATASET_ID, applied.backupId(),
+                new MapDtos.RestoreApplyRequest(restorePreview.currentFingerprint()), "demo_admin"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409");
+    }
+
+    @Test
+    void shouldKeepFacilityReferencedByRatingDuringRestore() {
+        com.fasterxml.jackson.databind.node.ObjectNode payload =
+                (com.fasterxml.jackson.databind.node.ObjectNode) mapDataService.exportGeoJson(DEMO_DATASET_ID);
+        payload.put("datasetId", SCHOOL_DATASET_ID.toString());
+        payload.put("datasetCode", "SCHOOL_EXAMPLE_V1");
+        MapDtos.ImportPreview importPreview = mapDataService.previewGeoJson(SCHOOL_DATASET_ID, payload);
+        MapDtos.ImportApplyResult applied = mapDataService.applyGeoJson(
+                SCHOOL_DATASET_ID,
+                new MapDtos.ImportApplyRequest(payload, "OVERWRITE",
+                        importPreview.payloadFingerprint(), importPreview.targetFingerprint()),
+                "demo_admin");
+
+        UUID facilityId = jdbcTemplate.queryForObject(
+                "SELECT id FROM accessible_facility WHERE dataset_id=? AND external_id='FAC-01'",
+                UUID.class, SCHOOL_DATASET_ID);
+        jdbcTemplate.update(
+                """
+                INSERT INTO facility_rating(dataset_id, facility_id, user_id, rating)
+                SELECT ?, ?, id, 5 FROM app_user WHERE username='demo_user'
+                """,
+                SCHOOL_DATASET_ID, facilityId);
+
+        MapDtos.RestorePreview restorePreview =
+                mapDataService.previewGeoJsonRestore(SCHOOL_DATASET_ID, applied.backupId());
+        assertThat(restorePreview.keptBusinessCounts().get("FACILITY")).isEqualTo(1);
+        assertThat(restorePreview.warnings()).anyMatch(message -> message.contains("保留"));
+
+        MapDtos.RestoreResult result = mapDataService.restoreGeoJsonBackup(
+                SCHOOL_DATASET_ID, applied.backupId(),
+                new MapDtos.RestoreApplyRequest(restorePreview.currentFingerprint()), "demo_admin");
+
+        assertThat(result.keptBusiness().get("FACILITY")).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM accessible_facility WHERE dataset_id=?",
+                Integer.class, SCHOOL_DATASET_ID)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM building WHERE dataset_id=?",
+                Integer.class, SCHOOL_DATASET_ID)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_node WHERE dataset_id=?",
+                Integer.class, SCHOOL_DATASET_ID)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM facility_rating WHERE dataset_id=?",
+                Integer.class, SCHOOL_DATASET_ID)).isEqualTo(1);
     }
 
     private String cookieValue(String setCookie, String name) {

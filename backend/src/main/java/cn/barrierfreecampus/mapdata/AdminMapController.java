@@ -142,4 +142,26 @@ public class AdminMapController {
             Authentication authentication) {
         return ApiResponse.ok(mapDataService.applyGeoJson(datasetId, request, authentication.getName()));
     }
+
+    @GetMapping("/datasets/{datasetId}/geojson/backups")
+    public ApiResponse<List<MapDtos.GeoJsonBackupView>> geojsonBackups(@PathVariable UUID datasetId) {
+        return ApiResponse.ok(mapDataService.listGeoJsonBackups(datasetId));
+    }
+
+    @PostMapping("/datasets/{datasetId}/geojson/backups/{backupId}/preview")
+    public ApiResponse<MapDtos.RestorePreview> previewGeoJsonRestore(
+            @PathVariable UUID datasetId,
+            @PathVariable UUID backupId) {
+        return ApiResponse.ok(mapDataService.previewGeoJsonRestore(datasetId, backupId));
+    }
+
+    @PostMapping("/datasets/{datasetId}/geojson/backups/{backupId}/restore")
+    public ApiResponse<MapDtos.RestoreResult> restoreGeoJsonBackup(
+            @PathVariable UUID datasetId,
+            @PathVariable UUID backupId,
+            @Valid @RequestBody MapDtos.RestoreApplyRequest request,
+            Authentication authentication) {
+        return ApiResponse.ok(
+                mapDataService.restoreGeoJsonBackup(datasetId, backupId, request, authentication.getName()));
+    }
 }
