@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,6 +65,16 @@ public class AdminMapController {
             @Valid @RequestBody MapDtos.NodeRequest request,
             Authentication authentication) {
         return ApiResponse.ok(Map.of("id", mapDataService.saveNode(datasetId, id, request, authentication.getName())));
+    }
+
+    @DeleteMapping("/datasets/{datasetId}/{type}/{id}")
+    public ApiResponse<Map<String, UUID>> deleteMapObject(
+            @PathVariable UUID datasetId,
+            @PathVariable String type,
+            @PathVariable UUID id,
+            Authentication authentication) {
+        mapDataService.deleteMapObject(type, datasetId, id, authentication.getName());
+        return ApiResponse.ok(Map.of("id", id));
     }
 
     @PostMapping("/datasets/{datasetId}/edges")

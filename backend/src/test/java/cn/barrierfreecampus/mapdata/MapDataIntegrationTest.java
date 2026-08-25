@@ -1010,6 +1010,83 @@ class MapDataIntegrationTest {
                 Integer.class, SCHOOL_DATASET_ID)).isEqualTo(1);
     }
 
+    @Test
+    void shouldDeleteNodeAndConnectedEdges() {
+        UUID first = mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("DEL-N-A", "删除测试A", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        UUID second = mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("DEL-N-B", "删除测试B", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.696359, 31.535827)), "demo_admin");
+        UUID edge = mapDataService.saveEdge(SCHOOL_DATASET_ID, null,
+                new MapDtos.EdgeRequest("DEL-E-1", "删除测试路", first, second, BigDecimal.ONE,
+                        "FLAT", false, 0, "STANDARD", "ASPHALT", "HIGH", true,
+                        "ACTIVE", "LOW", List.of()), "demo_admin");
+
+        mapDataService.deleteMapObject("nodes", SCHOOL_DATASET_ID, first, "demo_admin");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_node WHERE id=?", Integer.class, first)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_edge WHERE id=?", Integer.class, edge)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM audit_log WHERE action='NODE_DELETE'", Integer.class)).isPositive();
+    }
+
+    @Test
+    void shouldDeleteNodeAndRemoveReferencedRouteHistory() {
+        UUID node = mapDataService.saveNode(SCHOOL_DATASET_ID, null,
+                new MapDtos.NodeRequest("DEL-N-H", "历史引用节点", "INTERSECTION", true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        UUID historyId = UUID.randomUUID();
+        jdbcTemplate.update(
+                """
+                INSERT INTO route_history(
+                    id,user_id,dataset_id,start_node_id,end_node_id,mobility_mode,travel_period,request_json,result_json)
+                SELECT ?, u.id, ?, ?, ?, 'WALKING','DAY','{}','{}' FROM app_user u WHERE username='demo_user'
+                """,
+                historyId, SCHOOL_DATASET_ID, node, node);
+
+        mapDataService.deleteMapObject("nodes", SCHOOL_DATASET_ID, node, "demo_admin");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_history WHERE id=?", Integer.class, historyId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM route_node WHERE id=?", Integer.class, node)).isZero();
+    }
+
+    @Test
+    void shouldDeleteBuildingAndCascadeEntrancesFacilitiesAndRatings() {
+        UUID building = mapDataService.createBuilding(SCHOOL_DATASET_ID,
+                new MapDtos.BuildingRequest("DEL-B-01", "删除测试建筑", "TEACHING", null, true,
+                        new MapDtos.Coordinate(104.695359, 31.534827)), "demo_admin");
+        UUID entrance = mapDataService.createEntrance(SCHOOL_DATASET_ID,
+                new MapDtos.EntranceRequest(building, "DEL-EN-01", "删除测试入口", true,
+                        "ACCESSIBLE", "OPEN", true,
+                        new MapDtos.Coordinate(104.695459, 31.534827)), "demo_admin");
+        UUID facility = mapDataService.createFacility(SCHOOL_DATASET_ID,
+                new MapDtos.FacilityRequest(building, "DEL-F-01", "删除测试设施", "ELEVATOR",
+                        "1F", "OPEN", null, true,
+                        new MapDtos.Coordinate(104.695559, 31.534827)), "demo_admin");
+        jdbcTemplate.update(
+                """
+                INSERT INTO facility_rating(dataset_id, facility_id, user_id, rating)
+                SELECT ?, ?, id, 5 FROM app_user WHERE username='demo_user'
+                """,
+                SCHOOL_DATASET_ID, facility);
+
+        mapDataService.deleteMapObject("buildings", SCHOOL_DATASET_ID, building, "demo_admin");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM building WHERE id=?", Integer.class, building)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM building_entrance WHERE id=?", Integer.class, entrance)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM accessible_facility WHERE id=?", Integer.class, facility)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM facility_rating WHERE facility_id=?", Integer.class, facility)).isZero();
+    }
+
     private String cookieValue(String setCookie, String name) {
         assertThat(setCookie).isNotBlank();
         String prefix = name + "=";

@@ -191,6 +191,97 @@ public class MapObjectService {
         return id;
     }
 
+    @Transactional
+    public void deleteMapObject(String type, UUID datasetId, UUID id, String actor) {
+        support.requireDataset(datasetId, true);
+        String action = switch (type) {
+            case "nodes" -> {
+                deleteNodeInternal(datasetId, id);
+                yield "NODE_DELETE";
+            }
+            case "edges" -> {
+                deleteEdgeInternal(datasetId, id);
+                yield "EDGE_DELETE";
+            }
+            case "buildings" -> {
+                deleteBuildingInternal(datasetId, id);
+                yield "BUILDING_DELETE";
+            }
+            case "entrances" -> {
+                deleteEntranceInternal(datasetId, id);
+                yield "ENTRANCE_DELETE";
+            }
+            case "facilities" -> {
+                deleteFacilityInternal(datasetId, id);
+                yield "FACILITY_DELETE";
+            }
+            case "barriers" -> {
+                deleteBarrierInternal(datasetId, id);
+                yield "BARRIER_DELETE";
+            }
+            default -> throw support.badRequest("不支持的地图对象类型");
+        };
+        support.audit(actor, action, type.toUpperCase(), id.toString());
+    }
+
+    private void deleteNodeInternal(UUID datasetId, UUID id) {
+        requireExists("route_node", datasetId, id, "道路节点不存在");
+        // 删除引用该节点的路线历史（收藏随历史级联删除），避免外键阻塞
+        jdbc.update(
+                "DELETE FROM route_history WHERE dataset_id=? AND (start_node_id=? OR end_node_id=?)",
+                datasetId, id, id);
+        jdbc.update(
+                "DELETE FROM route_edge WHERE dataset_id=? AND (from_node_id=? OR to_node_id=?)",
+                datasetId, id, id);
+        jdbc.update("DELETE FROM route_node WHERE id=? AND dataset_id=?", id, datasetId);
+    }
+
+    private void deleteEdgeInternal(UUID datasetId, UUID id) {
+        requireExists("route_edge", datasetId, id, "道路不存在");
+        jdbc.update("DELETE FROM route_edge WHERE id=? AND dataset_id=?", id, datasetId);
+    }
+
+    private void deleteEntranceInternal(UUID datasetId, UUID id) {
+        requireExists("building_entrance", datasetId, id, "入口不存在");
+        jdbc.update("DELETE FROM building_entrance WHERE id=? AND dataset_id=?", id, datasetId);
+    }
+
+    private void deleteFacilityInternal(UUID datasetId, UUID id) {
+        requireExists("accessible_facility", datasetId, id, "设施不存在");
+        jdbc.update("DELETE FROM facility_rating WHERE facility_id=?", id);
+        jdbc.update("DELETE FROM facility_comment WHERE facility_id=?", id);
+        jdbc.update("DELETE FROM facility_suggestion WHERE facility_id=?", id);
+        jdbc.update("DELETE FROM accessible_facility WHERE id=? AND dataset_id=?", id, datasetId);
+    }
+
+    private void deleteBuildingInternal(UUID datasetId, UUID id) {
+        requireExists("building", datasetId, id, "建筑不存在");
+        List<UUID> facilityIds = jdbc.query(
+                "SELECT id FROM accessible_facility WHERE building_id=? AND dataset_id=?",
+                (rs, row) -> rs.getObject(1, UUID.class), id, datasetId);
+        for (UUID facilityId : facilityIds) {
+            jdbc.update("DELETE FROM facility_rating WHERE facility_id=?", facilityId);
+            jdbc.update("DELETE FROM facility_comment WHERE facility_id=?", facilityId);
+            jdbc.update("DELETE FROM facility_suggestion WHERE facility_id=?", facilityId);
+        }
+        jdbc.update("DELETE FROM accessible_facility WHERE building_id=? AND dataset_id=?", id, datasetId);
+        jdbc.update("DELETE FROM building_entrance WHERE building_id=? AND dataset_id=?", id, datasetId);
+        jdbc.update("DELETE FROM building WHERE id=? AND dataset_id=?", id, datasetId);
+    }
+
+    private void deleteBarrierInternal(UUID datasetId, UUID id) {
+        requireExists("barrier_report", datasetId, id, "障碍不存在");
+        jdbc.update("UPDATE barrier_report SET matched_report_id=NULL WHERE matched_report_id=?", id);
+        jdbc.update("DELETE FROM barrier_report WHERE id=? AND dataset_id=?", id, datasetId);
+    }
+
+    private void requireExists(String table, UUID datasetId, UUID id, String message) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM " + table + " WHERE id=? AND dataset_id=?",
+                Integer.class, id, datasetId);
+        if (count == null || count == 0) throw support.notFound(message);
+    }
+
     private Coordinate requireNodeCoordinate(UUID datasetId, UUID nodeId) {
         List<Coordinate> points = jdbc.query(
                 "SELECT ST_X(geom), ST_Y(geom) FROM route_node WHERE id=? AND dataset_id=?",

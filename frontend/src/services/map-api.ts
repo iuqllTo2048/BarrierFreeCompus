@@ -47,6 +47,20 @@ export async function saveNode(
   return response.data.data.id;
 }
 
+export type MapObjectType =
+  'nodes' | 'edges' | 'buildings' | 'entrances' | 'facilities' | 'barriers';
+
+export async function deleteMapObject(
+  datasetId: string,
+  type: MapObjectType,
+  id: string,
+): Promise<string> {
+  const response = await http.delete<ApiResponse<{ id: string }>>(
+    `/admin/map/datasets/${datasetId}/${type}/${id}`,
+  );
+  return response.data.data.id;
+}
+
 export async function saveEdge(
   datasetId: string,
   request: EdgeRequest,

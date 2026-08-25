@@ -82,6 +82,10 @@ public class MapDataService {
         return objectService.saveNode(datasetId, id, request, actor);
     }
 
+    public void deleteMapObject(String type, UUID datasetId, UUID id, String actor) {
+        objectService.deleteMapObject(type, datasetId, id, actor);
+    }
+
     public UUID saveEdge(UUID datasetId, UUID id, EdgeRequest request, String actor) {
         return objectService.saveEdge(datasetId, id, request, actor);
     }

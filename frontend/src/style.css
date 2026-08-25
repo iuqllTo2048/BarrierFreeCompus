@@ -1769,6 +1769,10 @@ h2 {
 .edge-editor-actions {
   justify-content: start;
 }
+.admin-map-page aside .editor-delete-button {
+  margin-top: 12px;
+  margin-left: 0;
+}
 .geojson-import-preview {
   display: grid;
   gap: 16px;

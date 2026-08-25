@@ -18,6 +18,7 @@ const mode = ref<EditMode>('SELECT');
 const selectedId = ref<string | null>(null);
 const editingId = ref<string | null>(null);
 const saving = ref(false);
+const deleting = ref(false);
 const edgeNodeHint = ref('请选择第一个道路节点');
 const edgePoints = ref<Coordinate[]>([]);
 const edgeHistory = ref<Coordinate[][]>([]);
@@ -410,11 +411,40 @@ async function saveCurrent(): Promise<void> {
   }
 }
 
+async function deleteCurrentMapObject(): Promise<void> {
+  const datasetId = mapData.selectedDatasetId;
+  if (!datasetId || !editingId.value) return;
+  const typeMap: Partial<
+    Record<EditMode, 'nodes' | 'edges' | 'buildings' | 'entrances' | 'facilities' | 'barriers'>
+  > = {
+    NODE: 'nodes',
+    EDGE: 'edges',
+    SELECT: 'nodes',
+  };
+  const type = typeMap[mode.value];
+  if (!type) return;
+  const deletedLabel = modeLabel(mode.value);
+  deleting.value = true;
+  try {
+    await mapApi.deleteMapObject(datasetId, type, editingId.value);
+    await mapData.refresh(true);
+    mode.value = 'SELECT';
+    selectedId.value = null;
+    editingId.value = null;
+    ElMessage.success(`${deletedLabel}已删除`);
+  } catch (reason: unknown) {
+    ElMessage.error(reason instanceof Error ? reason.message : readApiMessage(reason, '删除失败'));
+  } finally {
+    deleting.value = false;
+  }
+}
+
 async function savePointObject(datasetId: string): Promise<void> {
   const common = { externalId: pointForm.externalId, coordinate: pointForm.coordinate };
   if (mode.value === 'BUILDING') {
     await mapApi.createMapObject(datasetId, 'buildings', {
       ...common,
+      center: pointForm.coordinate,
       name: pointForm.name,
       category: pointForm.category,
       description: pointForm.description,
@@ -630,6 +660,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
           <el-button native-type="submit" type="primary" :loading="saving">
             {{ editingId ? '保存节点修改' : '创建节点' }}
           </el-button>
+          <el-button
+            v-if="editingId"
+            type="primary"
+            class="editor-delete-button"
+            :loading="deleting"
+            @click="deleteCurrentMapObject"
+          >
+            删除节点
+          </el-button>
         </el-form>
 
         <el-form v-else-if="mode === 'EDGE'" label-position="top" @submit.prevent="saveCurrent">
@@ -810,6 +849,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
           </div>
           <el-button native-type="submit" type="primary" :loading="saving">
             {{ editingId ? '保存道路修改' : '创建道路' }}
+          </el-button>
+          <el-button
+            v-if="editingId"
+            type="primary"
+            class="editor-delete-button"
+            :loading="deleting"
+            @click="deleteCurrentMapObject"
+          >
+            删除道路
           </el-button>
         </el-form>
 
