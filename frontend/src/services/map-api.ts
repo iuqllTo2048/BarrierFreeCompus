@@ -3,9 +3,12 @@ import type { ApiResponse } from '../types/auth';
 import type {
   DatasetView,
   EdgeRequest,
+  GeoJsonBackup,
   GeoJsonFeatureCollection,
   GeoJsonImportPreview,
   GeoJsonImportResult,
+  GeoJsonRestorePreview,
+  GeoJsonRestoreResult,
   MapSnapshot,
   NodeRequest,
   PointCreateRequest,
@@ -41,6 +44,20 @@ export async function saveNode(
   const response = id
     ? await http.put<ApiResponse<{ id: string }>>(path, request)
     : await http.post<ApiResponse<{ id: string }>>(path, request);
+  return response.data.data.id;
+}
+
+export type MapObjectType =
+  'nodes' | 'edges' | 'buildings' | 'entrances' | 'facilities' | 'barriers';
+
+export async function deleteMapObject(
+  datasetId: string,
+  type: MapObjectType,
+  id: string,
+): Promise<string> {
+  const response = await http.delete<ApiResponse<{ id: string }>>(
+    `/admin/map/datasets/${datasetId}/${type}/${id}`,
+  );
   return response.data.data.id;
 }
 
@@ -110,6 +127,35 @@ export async function applyGeoJson(
       payloadFingerprint: preview.payloadFingerprint,
       targetFingerprint: preview.targetFingerprint,
     },
+  );
+  return response.data.data;
+}
+
+export async function listGeoJsonBackups(datasetId: string): Promise<GeoJsonBackup[]> {
+  const response = await http.get<ApiResponse<GeoJsonBackup[]>>(
+    `/admin/map/datasets/${datasetId}/geojson/backups`,
+  );
+  return response.data.data;
+}
+
+export async function previewGeoJsonRestore(
+  datasetId: string,
+  backupId: string,
+): Promise<GeoJsonRestorePreview> {
+  const response = await http.post<ApiResponse<GeoJsonRestorePreview>>(
+    `/admin/map/datasets/${datasetId}/geojson/backups/${backupId}/preview`,
+  );
+  return response.data.data;
+}
+
+export async function restoreGeoJsonBackup(
+  datasetId: string,
+  backupId: string,
+  currentFingerprint: string,
+): Promise<GeoJsonRestoreResult> {
+  const response = await http.post<ApiResponse<GeoJsonRestoreResult>>(
+    `/admin/map/datasets/${datasetId}/geojson/backups/${backupId}/restore`,
+    { currentFingerprint },
   );
   return response.data.data;
 }

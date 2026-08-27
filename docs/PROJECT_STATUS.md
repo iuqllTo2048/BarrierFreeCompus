@@ -3,9 +3,51 @@
 ## 当前阶段
 
 - 当前版本：v1.0（技术版本 `1.0.0`）
-- 当前 Stage：v1.0 后续改进（Formal GeoJSON 安全协作）
-- 状态：已实现、验收并提交（`1cf48cf`）
+- 当前 Stage：v2.0 Stage 1 工程质量补全（GeoJSON 备份一键恢复 / 服务与组件拆分 / 分包优化）
+- 状态：v2.0 Stage 1 四个子任务全部实现并通过自动测试，等待用户统一验收
 - Git Tag：`v1.0`（用户已明确确认创建）
+
+## v2.0 Stage 1 变更（进行中）
+
+### 子任务 ① GeoJSON 备份一键恢复（已完成，待验收）
+
+- 新增管理员接口：备份列表、恢复预览、执行恢复；恢复使用导入前 JSONB 快照整体替换六类地图对象。
+- 业务数据保护：USER_REPORT 障碍永不删除；被评分/评论/建议/路线历史外键引用的设施、节点及其关联建筑保留并明确提示。
+- 并发保护：预检返回目标指纹，恢复时数据集已变化则返回 409 要求重新预检。
+- 管理端地图编辑器新增「导入备份」面板：列表 → 预览影响 → 二次确认 → 恢复。
+- 测试：MapDataIntegrationTest 新增 3 条，后端 74 条 JUnit 全绿；前端 31 条 Vitest、typecheck/lint/format/build 全绿。
+- 附带修复：前端全量同步 Prettier 格式（仓库此前 51 个文件不符合自身格式配置，与本次功能无关）。
+
+### 子任务 ② 后端服务拆分（已完成，待验收）
+
+- `MapDataService`（1334 行）按领域拆为：快照查询、地图对象保存、GeoJSON 导出、GeoJSON 导入与备份恢复，原类保留为门面。
+- `BusinessService`（620 行）拆为：个人资料、设施互动、上报审核、用户数据、管理治理，原类保留为门面。
+- `AnalyticsService`（439 行）拆为：统计查询、建筑评分、CSV 导出，原类保留为门面。
+- Controller 调用与 DTO 不变；74 条 JUnit 全绿，Docker 重建后端 healthy，`{"status":"UP"}`。
+
+### 子任务 ③ 管理地图页面组件拆分（已完成，待验收）
+
+- `AdminDashboardView.vue`（1130 → 942 行）拆分出 `GeoJsonImportDialog.vue`（导入对话框）与 `GeoJsonBackupDialog.vue`（备份恢复对话框）。
+- 页面视觉与交互不变；导出/导入/备份按钮与地图编辑功能经无头浏览器冒烟验证正常。
+
+### 子任务 ④ AdminAnalyticsView 分包优化（已完成，待验收）
+
+- 治理洞察页改为按需异步加载地图与图表组件，主包 651.66kB → 111.55kB（gzip 218.20 → 33.75kB）。
+- ECharts 与高德地图拆为独立分包，按需加载；typecheck/lint/test/build 全绿，页面渲染无 JS 错误。
+
+### 工程加固（Node 22 对齐 + 数据库备份脚本）
+
+- 前端本地 Node 与 Docker 构建对齐到 22：新增 `frontend/.nvmrc`，便携版 Node 22.23.2 位于 `D:\node22`；Node 22 下 typecheck/lint/31 Vitest/format/build 全部通过。
+- 新增 `scripts/backup-db.ps1`：pg_dump 自定义格式备份到 `backups/`（已加入 .gitignore），默认保留 14 份；实测生成并校验备份可读。
+- 备份与恢复命令、定时任务示例已写入 `启动说明.md` 与 `docs/DEPLOYMENT.md`。
+- 技术栈零改动：pom.xml、package.json（内容）、docker-compose.yml 均未变更。
+
+### 附带修复：管理员登录却显示用户界面
+
+- 根路径 `/` 原先固定重定向 `/user`，管理员打开站点根地址会落入用户界面；现改为按角色跳转（管理员 → `/admin`，用户 → `/user`）。
+- 会话在挂载前恢复，保证根路径重定向时角色已就绪；已用无头浏览器实测管理员/用户两种账号。
+
+## v1.0 交付范围
 
 ## v1.0 交付范围
 

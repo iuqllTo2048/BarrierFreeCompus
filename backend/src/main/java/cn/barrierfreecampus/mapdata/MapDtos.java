@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -95,6 +96,41 @@ public final class MapDtos {
             int updated,
             int unchanged,
             int keptLocal) {
+    }
+
+    public record GeoJsonBackupView(
+            UUID id,
+            Instant createdAt,
+            String actorUsername,
+            String conflictPolicy,
+            String targetFingerprint,
+            String payloadFingerprint,
+            Map<String, Integer> objectCounts) {
+    }
+
+    public record RestorePreview(
+            UUID backupId,
+            Instant backupCreatedAt,
+            String currentFingerprint,
+            String snapshotFingerprint,
+            Map<String, Integer> snapshotCounts,
+            Map<String, Integer> toDeleteCounts,
+            Map<String, Integer> keptBusinessCounts,
+            List<String> warnings) {
+    }
+
+    public record RestoreApplyRequest(
+            @NotBlank @Size(max = 64) String currentFingerprint) {
+    }
+
+    public record RestoreResult(
+            UUID backupId,
+            Map<String, Integer> created,
+            Map<String, Integer> updated,
+            Map<String, Integer> deleted,
+            Map<String, Integer> keptBusiness,
+            List<String> warnings,
+            Instant restoredAt) {
     }
 
     public record Coordinate(

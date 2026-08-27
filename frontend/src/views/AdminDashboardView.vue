@@ -2,18 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import CampusMap from '../components/CampusMap.vue';
+import GeoJsonBackupDialog from '../components/GeoJsonBackupDialog.vue';
+import GeoJsonImportDialog from '../components/GeoJsonImportDialog.vue';
 import { useMapDataStore } from '../stores/map-data';
 import * as mapApi from '../services/map-api';
 import { readApiMessage } from '../services/http';
 import { DEFAULT_CAMPUS_CENTER, pathDistanceMeters } from '../services/map-geometry';
-import type {
-  Coordinate,
-  EdgeRequest,
-  GeoJsonEntityType,
-  GeoJsonFeatureCollection,
-  GeoJsonImportPreview,
-  NodeRequest,
-} from '../types/map';
+import type { Coordinate, EdgeRequest, NodeRequest } from '../types/map';
 
 type EditMode = 'SELECT' | 'NODE' | 'EDGE' | 'BUILDING' | 'ENTRANCE' | 'FACILITY' | 'BARRIER';
 type FeatureKind = 'node' | 'edge' | 'facility' | 'barrier' | 'building';
@@ -23,26 +18,14 @@ const mode = ref<EditMode>('SELECT');
 const selectedId = ref<string | null>(null);
 const editingId = ref<string | null>(null);
 const saving = ref(false);
+const deleting = ref(false);
 const edgeNodeHint = ref('请选择第一个道路节点');
-const fileInput = ref<HTMLInputElement | null>(null);
 const edgePoints = ref<Coordinate[]>([]);
 const edgeHistory = ref<Coordinate[][]>([]);
 const pathEditorOpen = ref(false);
 const placementMessage = ref('');
-const importDialogOpen = ref(false);
-const importFileName = ref('');
-const importPayload = ref<GeoJsonFeatureCollection | null>(null);
-const importPreview = ref<GeoJsonImportPreview | null>(null);
-const importPolicy = ref<'KEEP_TARGET' | 'OVERWRITE'>('KEEP_TARGET');
-const importing = ref(false);
-const importTypes: Array<{ type: GeoJsonEntityType; label: string }> = [
-  { type: 'BUILDING', label: '建筑' },
-  { type: 'ENTRANCE', label: '入口' },
-  { type: 'NODE', label: '道路节点' },
-  { type: 'EDGE', label: '道路' },
-  { type: 'FACILITY', label: '设施' },
-  { type: 'BARRIER', label: '管理员障碍' },
-];
+const importDialogRef = ref<InstanceType<typeof GeoJsonImportDialog> | null>(null);
+const backupDialogRef = ref<InstanceType<typeof GeoJsonBackupDialog> | null>(null);
 
 const nodeForm = reactive<NodeRequest>({
   externalId: '',
@@ -428,11 +411,40 @@ async function saveCurrent(): Promise<void> {
   }
 }
 
+async function deleteCurrentMapObject(): Promise<void> {
+  const datasetId = mapData.selectedDatasetId;
+  if (!datasetId || !editingId.value) return;
+  const typeMap: Partial<
+    Record<EditMode, 'nodes' | 'edges' | 'buildings' | 'entrances' | 'facilities' | 'barriers'>
+  > = {
+    NODE: 'nodes',
+    EDGE: 'edges',
+    SELECT: 'nodes',
+  };
+  const type = typeMap[mode.value];
+  if (!type) return;
+  const deletedLabel = modeLabel(mode.value);
+  deleting.value = true;
+  try {
+    await mapApi.deleteMapObject(datasetId, type, editingId.value);
+    await mapData.refresh(true);
+    mode.value = 'SELECT';
+    selectedId.value = null;
+    editingId.value = null;
+    ElMessage.success(`${deletedLabel}已删除`);
+  } catch (reason: unknown) {
+    ElMessage.error(reason instanceof Error ? reason.message : readApiMessage(reason, '删除失败'));
+  } finally {
+    deleting.value = false;
+  }
+}
+
 async function savePointObject(datasetId: string): Promise<void> {
   const common = { externalId: pointForm.externalId, coordinate: pointForm.coordinate };
   if (mode.value === 'BUILDING') {
     await mapApi.createMapObject(datasetId, 'buildings', {
       ...common,
+      center: pointForm.coordinate,
       name: pointForm.name,
       category: pointForm.category,
       description: pointForm.description,
@@ -493,54 +505,8 @@ async function downloadGeoJson(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-async function importFile(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file || !mapData.selectedDatasetId) return;
-  try {
-    const payload = JSON.parse(await file.text()) as GeoJsonFeatureCollection;
-    if (!payload.schemaVersion && mapData.selectedDataset?.demo) {
-      const result = await mapApi.importGeoJson(mapData.selectedDatasetId, payload);
-      await mapData.refresh(true);
-      ElMessage.success(
-        `兼容导入完成：${result.nodes} 节点、${result.edges} 道路、${result.facilities} 设施`,
-      );
-      return;
-    }
-    importing.value = true;
-    importPayload.value = payload;
-    importFileName.value = file.name;
-    importPolicy.value = 'KEEP_TARGET';
-    importPreview.value = await mapApi.previewGeoJson(mapData.selectedDatasetId, payload);
-    importDialogOpen.value = true;
-  } catch (reason: unknown) {
-    ElMessage.error(readApiMessage(reason, 'GeoJSON 文件解析或预检失败'));
-  } finally {
-    importing.value = false;
-    input.value = '';
-  }
-}
-
-async function confirmImport(): Promise<void> {
-  if (!mapData.selectedDatasetId || !importPayload.value || !importPreview.value) return;
-  importing.value = true;
-  try {
-    const result = await mapApi.applyGeoJson(
-      mapData.selectedDatasetId,
-      importPayload.value,
-      importPreview.value,
-      importPolicy.value,
-    );
-    await mapData.refresh(true);
-    importDialogOpen.value = false;
-    ElMessage.success(
-      `导入完成：新增 ${result.created}、更新 ${result.updated}、保留本地 ${result.keptLocal}；备份 ${result.backupId}`,
-    );
-  } catch (reason: unknown) {
-    ElMessage.error(readApiMessage(reason, '导入失败；数据未写入，请重新预检'));
-  } finally {
-    importing.value = false;
-  }
+async function handleGeoJsonApplied(): Promise<void> {
+  await mapData.refresh(true);
 }
 
 watch(
@@ -586,14 +552,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
           @change="toggleDataset"
         />
         <el-button @click="downloadGeoJson">导出 GeoJSON</el-button>
-        <el-button :loading="importing" @click="fileInput?.click()">导入 GeoJSON</el-button>
-        <input
-          ref="fileInput"
-          class="visually-hidden"
-          type="file"
-          accept=".json,.geojson,application/geo+json"
-          @change="importFile"
-        />
+        <el-button @click="importDialogRef?.openFilePicker()">导入 GeoJSON</el-button>
+        <el-button @click="backupDialogRef?.open()">导入备份</el-button>
       </div>
     </header>
 
@@ -699,6 +659,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
           </el-form-item>
           <el-button native-type="submit" type="primary" :loading="saving">
             {{ editingId ? '保存节点修改' : '创建节点' }}
+          </el-button>
+          <el-button
+            v-if="editingId"
+            type="primary"
+            class="editor-delete-button"
+            :loading="deleting"
+            @click="deleteCurrentMapObject"
+          >
+            删除节点
           </el-button>
         </el-form>
 
@@ -881,6 +850,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
           <el-button native-type="submit" type="primary" :loading="saving">
             {{ editingId ? '保存道路修改' : '创建道路' }}
           </el-button>
+          <el-button
+            v-if="editingId"
+            type="primary"
+            class="editor-delete-button"
+            :loading="deleting"
+            @click="deleteCurrentMapObject"
+          >
+            删除道路
+          </el-button>
         </el-form>
 
         <el-form v-else label-position="top" @submit.prevent="saveCurrent">
@@ -992,79 +970,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
       </aside>
     </div>
 
-    <el-dialog
-      v-model="importDialogOpen"
-      class="geojson-import-dialog"
-      title="GeoJSON 安全导入预览"
-      width="min(720px, calc(100vw - 32px))"
-      :close-on-click-modal="!importing"
-      :close-on-press-escape="!importing"
-    >
-      <div v-if="importPreview" class="geojson-import-preview">
-        <p class="import-target">
-          <strong>{{ importFileName }}</strong>
-          <span>→ {{ mapData.selectedDataset?.name }}</span>
-        </p>
-        <p class="merge-safety-note">
-          本次仅合并新增和同编号对象；文件中缺失的本地对象不会被删除。
-        </p>
-
-        <div class="import-summary" role="table" aria-label="GeoJSON 导入对象统计">
-          <div class="import-summary__row import-summary__head" role="row">
-            <span role="columnheader">对象</span><span role="columnheader">新增</span
-            ><span role="columnheader">相同</span><span role="columnheader">内容不同</span>
-          </div>
-          <div v-for="item in importTypes" :key="item.type" class="import-summary__row" role="row">
-            <strong role="cell">{{ item.label }}</strong>
-            <span role="cell">{{ importPreview.summaries[item.type]?.creates ?? 0 }}</span>
-            <span role="cell">{{ importPreview.summaries[item.type]?.unchanged ?? 0 }}</span>
-            <span role="cell">{{ importPreview.summaries[item.type]?.conflicts ?? 0 }}</span>
-          </div>
-        </div>
-
-        <el-alert
-          v-if="importPreview.errors.length"
-          title="文件不能导入"
-          type="error"
-          :closable="false"
-          show-icon
-        >
-          <ul class="import-message-list">
-            <li v-for="message in importPreview.errors" :key="message">{{ message }}</li>
-          </ul>
-        </el-alert>
-        <el-alert
-          v-else-if="importPreview.warnings.length"
-          title="导入说明"
-          type="warning"
-          :closable="false"
-          show-icon
-        >
-          <ul class="import-message-list">
-            <li v-for="message in importPreview.warnings" :key="message">{{ message }}</li>
-          </ul>
-        </el-alert>
-
-        <fieldset v-if="importPreview.conflictSamples.length" class="conflict-policy-fieldset">
-          <legend>同编号且内容不同的对象</legend>
-          <el-radio-group v-model="importPolicy">
-            <el-radio value="KEEP_TARGET">保留本地对象（推荐）</el-radio>
-            <el-radio value="OVERWRITE">使用文件内容覆盖</el-radio>
-          </el-radio-group>
-          <p>示例：{{ importPreview.conflictSamples.join('、') }}</p>
-        </fieldset>
-      </div>
-      <template #footer>
-        <el-button :disabled="importing" @click="importDialogOpen = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="importing"
-          :disabled="!importPreview || importPreview.errors.length > 0"
-          @click="confirmImport"
-        >
-          确认合并导入
-        </el-button>
-      </template>
-    </el-dialog>
+    <GeoJsonImportDialog
+      ref="importDialogRef"
+      :dataset-id="mapData.selectedDatasetId ?? ''"
+      :dataset-name="mapData.selectedDataset?.name ?? ''"
+      :demo="mapData.selectedDataset?.demo ?? false"
+      @applied="handleGeoJsonApplied"
+    />
+    <GeoJsonBackupDialog
+      ref="backupDialogRef"
+      :dataset-id="mapData.selectedDatasetId ?? ''"
+      @applied="handleGeoJsonApplied"
+    />
   </section>
 </template>

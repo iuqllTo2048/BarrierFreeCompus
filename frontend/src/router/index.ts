@@ -26,7 +26,7 @@ const router = createRouter({
       path: '/',
       component: AppShell,
       children: [
-        { path: '', redirect: '/user' },
+        { path: '', redirect: () => defaultPath(useAuthStore().role) },
         {
           path: 'user',
           name: 'user-home',

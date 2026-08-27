@@ -37,7 +37,12 @@ const form = reactive({
   preferToilet: false,
 });
 
-const nodes = computed(() => mapData.snapshot?.nodes.filter((node) => node.active) ?? []);
+// 排除管理员画路网用的"新道路节点"占位节点，不作为用户起点/终点
+const nodes = computed(
+  () =>
+    mapData.snapshot?.nodes.filter((node) => node.active && node.name?.trim() !== '新道路节点') ??
+    [],
+);
 const routes = computed(() => result.value?.routes ?? []);
 const selectedRoute = computed(() => routes.value[selectedRouteIndex.value] ?? null);
 const mobilityOptions: Array<{ value: MobilityMode; label: string }> = [
@@ -122,6 +127,11 @@ async function selectFeature(selection: { kind: string; id: string }): Promise<v
     return;
   }
   if (selection.kind !== 'node' || !selectionTarget.value) return;
+  const clickedNode = mapData.snapshot?.nodes.find((item) => item.id === selection.id);
+  if (clickedNode?.name?.trim() === '新道路节点') {
+    ElMessage.warning('该节点是路网辅助节点，不能作为起点或终点');
+    return;
+  }
   if (selectionTarget.value === 'start') form.startNodeId = selection.id;
   else form.endNodeId = selection.id;
   result.value = null;

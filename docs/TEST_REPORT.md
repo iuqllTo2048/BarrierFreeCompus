@@ -58,6 +58,76 @@ E2E 使用 `barrierfreecampus-e2e`、18080/18081 和 PostgreSQL tmpfs；脚本�
 
 ## 6. 构建观察与非阻塞限制
 
+## 7. v2.0 Stage 1 子任务 ① 验证（2026-08-24）
+
+### 新增覆盖
+
+| 项目 | 结果 |
+|---|---|
+| 后端 JUnit | 74/74 通过（新增 GeoJSON 备份列表/恢复预览/执行恢复、409 并发保护、业务数据保留 3 条） |
+| 前端 Vitest | 31/31 通过；vue-tsc、ESLint、Prettier、Vite production build 全部通过 |
+| 恢复语义 | 快照整体替换六类地图对象；USER_REPORT 障碍不删除；有业务引用的设施/节点/建筑保留并提示 |
+| 并发安全 | 预检后数据集指纹变化时恢复返回 409，不写入任何数据 |
+| 审计 | 恢复写入 `audit_log`（`GEOJSON_BACKUP_RESTORE`） |
+
+### 说明
+
+- 本轮同时将前端 51 个文件同步到项目自身 Prettier 配置（此前仓库已存在格式偏差，与功能无关）。
+- A* 性能基线、安全扫描、E2E 与正式 Compose 验收在子任务 ① 中未做回归改动，保留 v1.0 结果；②③④ 完成后统一回归。
+
+## 8. v2.0 Stage 1 子任务 ② 验证（2026-08-24）
+
+### 服务拆分
+
+- `MapDataService` → `MapSnapshotService` + `MapObjectService` + `GeoJsonExportService` + `GeoJsonImportService` + `MapDataSupport`。
+- `BusinessService` → `UserProfileService` + `FacilityInteractionService` + `BarrierGovernanceService` + `UserDataService` + `AdminGovernanceService` + `BusinessSupport`。
+- `AnalyticsService` → `AnalyticsQueryService` + `BuildingScoreService` + `AnalyticsCsvService`。
+
+### 结果
+
+| 项目 | 结果 |
+|---|---|
+| 后端 JUnit | 74/74 通过（纯重构，无行为变化） |
+| Controller/DTO | 公开方法签名不变，Controller 未改动 |
+| 运行验证 | Docker 重建后 db/backend healthy，health `UP` |
+
+### 附带修复：管理员根路径跳转
+
+- `/` 根路径由固定 `/user` 改为按角色跳转（管理员 `/admin`，用户 `/user`），会话在挂载前恢复。
+- 无头浏览器实测：`demo_admin` 打开根地址 → `/admin`；`demo_user` → `/user`。
+
+## 9. v2.0 Stage 1 子任务 ③ 验证（2026-08-24）
+
+### 组件拆分
+
+- `AdminDashboardView.vue`（1130 → 942 行）拆分出 `GeoJsonImportDialog.vue` 与 `GeoJsonBackupDialog.vue`。
+- 页面视觉与交互不变，导出/导入/备份入口保持不变。
+
+### 结果
+
+| 项目 | 结果 |
+|---|---|
+| 前端 Vitest | 31/31 通过 |
+| 静态门禁 | vue-tsc、ESLint、Prettier、Vite production build 全部通过 |
+| 冒烟验证 | 无头浏览器登录管理员后，导出/导入/导入备份三个按钮均存在 |
+| 运行验证 | Docker 重建后前端 200 |
+
+## 10. v2.0 Stage 1 子任务 ④ 验证（2026-08-24）
+
+### 分包优化
+
+- 治理洞察页 `CampusMap`（高德）与 `EChartPanel`（ECharts）改为 `defineAsyncComponent` 按需加载。
+- `AdminAnalyticsView` 主包：651.66kB → 111.55kB（gzip 218.20kB → 33.75kB）。
+- ECharts 拆为独立分包（539.89kB / gzip 184.63kB）按需加载，不再进入治理洞察首包。
+
+### 结果
+
+| 项目 | 结果 |
+|---|---|
+| 前端 Vitest | 31/31 通过 |
+| 静态门禁 | vue-tsc、ESLint、Prettier、Vite production build 全部通过 |
+| 冒烟验证 | 无头浏览器打开 `/admin/analytics` 渲染正常，0 JS 错误 |
+
 - `AdminAnalyticsView` 为 651.66kB，gzip 218.20kB，Vite 发出 >500kB 警告；页面已路由懒加载，v1.0 后可按 ECharts 模块继续拆包。
 - `@vueuse/core` 的第三方 PURE 注释位置触发 Rollup 清理提示，不影响产物。
 - Mockito/Byte Buddy 提示未来 JDK 将限制动态 Agent；Java 21 当前测试通过。
