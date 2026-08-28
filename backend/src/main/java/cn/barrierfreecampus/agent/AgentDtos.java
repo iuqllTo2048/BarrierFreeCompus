@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public final class AgentDtos {
@@ -27,12 +28,33 @@ public final class AgentDtos {
                               UUID nearestNodeId, double lng, double lat, String confidenceLevel) {}
     public record FacilitySummary(UUID id, String name, String facilityType, String openStatus,
                                   String confidenceLevel, double lng, double lat) {}
+    public record NearestFacilitySummary(UUID id, String name, String facilityType, String openStatus,
+                                         String confidenceLevel, double distanceM, double lng, double lat) {}
     public record BarrierSummary(UUID id, String title, String barrierType,
                                  String confidenceLevel, boolean blocking) {}
+    public record PlaceSearchToolResult(String status, String query, List<PlaceResult> candidates,
+                                        String message) {}
+    public record RouteToolResult(String status, String startName, List<String> waypointNames,
+                                  String endName, String mobilityMode,
+                                  List<RouteComparisonItem> routes, List<RouteSegmentSummary> segments,
+                                  RouteComparison comparison,
+                                  List<FacilitySummary> facilities, List<String> notices,
+                                  List<PlaceResult> startCandidates,
+                                  Map<String, List<PlaceResult>> waypointCandidates,
+                                  List<PlaceResult> endCandidates,
+                                  String message) {}
+    public record RouteSegmentSummary(int index, String startName, String endName,
+                                      List<RouteComparisonItem> routes, List<String> notices) {}
+    public record NearestFacilityToolResult(String status, String originName,
+                                            List<PlaceResult> originCandidates,
+                                            List<NearestFacilitySummary> facilities, String message) {}
+    public record BarrierDraftToolResult(String status, List<PlaceResult> placeCandidates,
+                                         BarrierDraftView draft, String message) {}
     public record RouteComparison(String recommendedProfile, List<RouteComparisonItem> routes,
                                   List<String> reasons) {}
     public record RouteComparisonItem(String profile, double distanceM, long estimatedMinutes,
-                                      String riskLevel, int stairsCount, int warningCount) {}
+                                      String riskLevel, int stairsCount, Map<String, Integer> slopeSummary,
+                                      boolean fallbackRoute, String confidence, List<String> warnings) {}
     public record BarrierDraftView(UUID id, BarrierSubmitRequest payload, String status,
                                    OffsetDateTime expiresAt) {}
     public record AgentResult(String text, RoutePlanResponse routeResult,

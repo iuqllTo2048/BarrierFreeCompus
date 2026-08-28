@@ -22,6 +22,7 @@ import cn.barrierfreecampus.agent.AgentRepository;
 import cn.barrierfreecampus.agent.AgentTools;
 import cn.barrierfreecampus.agent.AiProperties;
 import cn.barrierfreecampus.agent.AgentExecutionContext;
+import cn.barrierfreecampus.agent.ControlledAgentTools;
 import cn.barrierfreecampus.analytics.AnalyticsDtos;
 import cn.barrierfreecampus.analytics.AnalyticsFilter;
 import cn.barrierfreecampus.analytics.AnalyticsService;
@@ -99,6 +100,9 @@ class MapDataIntegrationTest {
 
     @Autowired
     private AgentTools agentTools;
+
+    @Autowired
+    private ControlledAgentTools controlledAgentTools;
 
     @Autowired
     private AgentRepository agentRepository;
@@ -728,6 +732,12 @@ class MapDataIntegrationTest {
                 DEMO_DATASET_ID, "从图书馆到体育与健康中心，轮椅怎么走", 8);
         assertThat(places).extracting(AgentDtos.PlaceResult::name)
                 .contains("图书馆", "体育与健康中心");
+        assertThat(agentTools.searchCampusPlace(DEMO_DATASET_ID, "体健中心", 3))
+                .extracting(AgentDtos.PlaceResult::name)
+                .contains("体育与健康中心");
+        assertThat(agentTools.searchCampusPlace(DEMO_DATASET_ID, "图叔馆", 3))
+                .extracting(AgentDtos.PlaceResult::name)
+                .contains("图书馆");
 
         UUID start = places.stream().filter(item -> item.name().equals("图书馆"))
                 .findFirst().orElseThrow().nearestNodeId();
@@ -742,6 +752,73 @@ class MapDataIntegrationTest {
         assertThat(agentTools.searchFacilitiesNearRoute(routes)).isNotNull();
         assertThat(agentTools.searchActiveBarriers(DEMO_DATASET_ID)).allSatisfy(barrier ->
                 assertThat(barrier.title()).isNotBlank());
+        assertThat(agentTools.searchNearestAccessibleFacilities(
+                DEMO_DATASET_ID, 112.9365, 28.1788, "ACCESSIBLE_TOILET", 3))
+                .isNotEmpty()
+                .allSatisfy(facility -> assertThat(facility.facilityType()).isEqualTo("ACCESSIBLE_TOILET"));
+    }
+
+    @Test
+    void controlledAgentToolsMustUseTrustedContextAndBackendRouting() {
+        AgentDtos.ConversationView conversation = agentRepository.createConversation(
+                "demo_user", "受控工具测试", aiProperties);
+        UUID requestId = UUID.randomUUID();
+        UUID messageId = agentRepository.addMessage(
+                conversation.id(), "USER", "从图书馆到体育与健康中心，轮椅怎么走？", requestId);
+        UUID invocationId = agentRepository.startInvocation(
+                "demo_user", conversation.id(), messageId, requestId, aiProperties);
+        AgentExecutionContext.TurnContext context = new AgentExecutionContext.TurnContext(
+                "demo_user", DEMO_DATASET_ID, conversation.id(), invocationId, (event, data) -> { });
+
+        try {
+            AgentExecutionContext.set(context);
+            AgentDtos.RouteToolResult result = controlledAgentTools.calculateAccessibleRoutes(
+                    "图书馆", "体育与健康中心", List.of(), "WHEELCHAIR", false, true);
+
+            assertThat(result.status()).isEqualTo("ROUTES_READY");
+            assertThat(result.routes()).hasSize(3);
+            assertThat(result.comparison()).isNotNull();
+            assertThat(context.routeResult()).isNotNull();
+            assertThat(context.routeResult().routes()).allSatisfy(route -> assertThat(route.stairsCount()).isZero());
+            assertThat(context.comparison().recommendedProfile()).isNotBlank();
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM ai_tool_call_log WHERE invocation_id=?", Integer.class, invocationId))
+                    .isEqualTo(1);
+        } finally {
+            AgentExecutionContext.clear();
+        }
+    }
+
+    @Test
+    void controlledAgentToolMustPlanWaypointsInOneCallAndReturnMergedGeometry() {
+        AgentDtos.ConversationView conversation = agentRepository.createConversation(
+                "demo_user", "途经点路线测试", aiProperties);
+        UUID requestId = UUID.randomUUID();
+        UUID messageId = agentRepository.addMessage(
+                conversation.id(), "USER", "从图书馆经过中央广场北到体育与健康中心", requestId);
+        UUID invocationId = agentRepository.startInvocation(
+                "demo_user", conversation.id(), messageId, requestId, aiProperties);
+        AgentExecutionContext.TurnContext context = new AgentExecutionContext.TurnContext(
+                "demo_user", DEMO_DATASET_ID, conversation.id(), invocationId, (event, data) -> { });
+
+        try {
+            AgentExecutionContext.set(context);
+            AgentDtos.RouteToolResult result = controlledAgentTools.calculateAccessibleRoutes(
+                    "图书馆", "体育与健康中心", List.of("中央广场北"),
+                    "WALKING", false, true);
+
+            assertThat(result.status()).isEqualTo("ROUTES_READY");
+            assertThat(result.waypointNames()).containsExactly("中央广场北");
+            assertThat(result.segments()).hasSize(2);
+            assertThat(result.routes()).hasSize(3);
+            assertThat(context.routeResult().routes()).isNotEmpty().allSatisfy(route ->
+                    assertThat(route.geometry().path("coordinates").size()).isGreaterThan(2));
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM ai_tool_call_log WHERE invocation_id=?", Integer.class, invocationId))
+                    .isEqualTo(1);
+        } finally {
+            AgentExecutionContext.clear();
+        }
     }
 
     @Test
@@ -755,7 +832,8 @@ class MapDataIntegrationTest {
 
         AgentDtos.BarrierDraftView draft;
         try {
-            AgentExecutionContext.setUsername("demo_user");
+            AgentExecutionContext.set(new AgentExecutionContext.TurnContext(
+                    "demo_user", DEMO_DATASET_ID, conversation.id(), UUID.randomUUID(), (event, data) -> { }));
             draft = agentTools.createBarrierReportDraft(conversation.id(), payload);
         } finally {
             AgentExecutionContext.clear();

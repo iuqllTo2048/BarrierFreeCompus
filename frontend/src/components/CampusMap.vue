@@ -84,6 +84,10 @@ const props = withDefaults(
     selectedId?: string | null;
     routes?: RouteResult[];
     selectedRouteIndex?: number;
+    showNetwork?: boolean;
+    showRouteNodes?: boolean;
+    showNetworkToggle?: boolean;
+    visibleRouteNodeIds?: string[] | null;
     startNodeId?: string | null;
     endNodeId?: string | null;
     heatPoints?: Array<{ lng: number; lat: number; count: number }>;
@@ -99,6 +103,10 @@ const props = withDefaults(
     selectedId: null,
     routes: () => [],
     selectedRouteIndex: 0,
+    showNetwork: true,
+    showRouteNodes: true,
+    showNetworkToggle: false,
+    visibleRouteNodeIds: null,
     startNodeId: null,
     endNodeId: null,
     heatPoints: () => [],
@@ -117,6 +125,7 @@ const emit = defineEmits<{
     selection: { kind: 'node' | 'edge' | 'facility' | 'barrier' | 'building'; id: string },
   ];
   pathChange: [path: Coordinate[]];
+  'update:showNetwork': [visible: boolean];
 }>();
 
 const container = ref<HTMLElement | null>(null);
@@ -174,6 +183,7 @@ let editingOverlays: unknown[] = [];
 let heatMap: HeatMapInstance | null = null;
 let polylineEditor: PolylineEditorInstance | null = null;
 let fittedDatasetId: string | null = null;
+let fittedRouteKey: string | null = null;
 
 function coordinates(geometry: GeoJsonGeometry): number[][] {
   return geometry.coordinates as number[][];
@@ -256,7 +266,7 @@ function renderSnapshot(): void {
     addSelectable(overlay, 'building', building.id);
   }
 
-  for (const edge of props.snapshot.edges) {
+  for (const edge of props.showNetwork ? props.snapshot.edges : []) {
     const selected = props.selectedId === edge.id;
     const closed = edge.status !== 'ACTIVE';
     const overlay = new api.Polyline({
@@ -278,6 +288,7 @@ function renderSnapshot(): void {
   }
 
   const amap = api;
+  const routeOverlays: unknown[] = [];
   props.routes.forEach((route, index) => {
     const active = index === props.selectedRouteIndex;
     const style = routeStyle(route.profile);
@@ -293,9 +304,15 @@ function renderSnapshot(): void {
       zIndex: active ? 170 : 150 + index,
     });
     overlays.push(overlay);
+    routeOverlays.push(overlay);
   });
 
-  for (const node of props.snapshot.nodes) {
+  const visibleNodes = props.showRouteNodes
+    ? props.snapshot.nodes.filter(
+        (node) => !props.visibleRouteNodeIds || props.visibleRouteNodeIds.includes(node.id),
+      )
+    : [];
+  for (const node of visibleNodes) {
     const selected = props.selectedId === node.id;
     const overlay = new api.CircleMarker({
       center: [node.lng, node.lat],
@@ -367,7 +384,16 @@ function renderSnapshot(): void {
   }
 
   map.add(overlays);
-  if (fittedDatasetId !== props.snapshot.dataset.id) {
+  const routeKey = props.routes.length
+    ? props.routes
+        .map((route) => `${route.profile}:${JSON.stringify(route.geometry.coordinates)}`)
+        .join('|')
+    : null;
+  if (!routeKey) fittedRouteKey = null;
+  if (routeKey && routeKey !== fittedRouteKey) {
+    map.setFitView(routeOverlays, false, [72, 72, 72, 72]);
+    fittedRouteKey = routeKey;
+  } else if (!routeKey && fittedDatasetId !== props.snapshot.dataset.id) {
     if (overlays.length) map.setFitView(overlays, false, [48, 48, 48, 48]);
     else {
       map.setCenter([props.snapshot.dataset.centerLng, props.snapshot.dataset.centerLat], true);
@@ -534,6 +560,9 @@ watch(
       props.selectedId,
       props.routes,
       props.selectedRouteIndex,
+      props.showNetwork,
+      props.showRouteNodes,
+      props.visibleRouteNodeIds,
       props.startNodeId,
       props.endNodeId,
       props.heatPoints,
@@ -596,10 +625,22 @@ onBeforeUnmount(() => {
     <div v-if="editingInstruction" class="map-editing-instruction" role="status">
       {{ editingInstruction }}
     </div>
+    <button
+      v-if="showNetworkToggle"
+      type="button"
+      class="map-network-toggle"
+      :aria-pressed="showNetwork"
+      @click="emit('update:showNetwork', !showNetwork)"
+    >
+      <AppIcon name="route" :size="16" />
+      {{ showNetwork ? '隐藏校园路网' : '显示校园路网' }}
+    </button>
     <div class="map-legend" aria-label="地图图例">
-      <span><i class="legend-node" />道路节点</span>
-      <span><i class="legend-edge" />启用道路</span>
-      <span><i class="legend-edge closed" />封闭/未知</span>
+      <span v-if="showRouteNodes"><i class="legend-node" />可选地点</span>
+      <template v-if="showNetwork">
+        <span><i class="legend-edge" />校园道路</span>
+        <span><i class="legend-edge closed" />封闭/未知</span>
+      </template>
       <span
         ><i class="legend-symbol facility-symbol"><AppIcon name="services" :size="14" /></i
         >设施</span
@@ -607,11 +648,9 @@ onBeforeUnmount(() => {
       <span
         ><i class="legend-symbol barrier-symbol"><AppIcon name="warning" :size="14" /></i>障碍</span
       >
-      <template v-if="routes.length">
-        <span><i class="legend-route shortest" />最短路线</span>
-        <span><i class="legend-route accessible" />无障碍优先</span>
-        <span><i class="legend-route balanced" />综合路线</span>
-      </template>
+      <span v-for="route in routes" :key="route.profile">
+        <i :class="`legend-route ${route.profile.toLowerCase()}`" />{{ profileLabel(route.profile) }}
+      </span>
     </div>
   </div>
 </template>

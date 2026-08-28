@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(prefix = "app.ai", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class MockAiGateway implements AiGateway {
     @Override
-    public String explain(String factualContext) {
-        return factualContext;
+    public String routeAssistant(String runtimeContextAndUserMessage) {
+        return runtimeContextAndUserMessage;
     }
 
     @Override

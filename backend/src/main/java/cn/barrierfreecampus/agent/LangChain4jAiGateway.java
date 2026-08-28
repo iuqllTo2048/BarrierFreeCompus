@@ -1,16 +1,22 @@
 package cn.barrierfreecampus.agent;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.UserMessage;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(prefix = "app.ai", name = "enabled", havingValue = "true")
 public class LangChain4jAiGateway implements AiGateway {
     private final OpenAiChatModel model;
+    private final RouteAssistant routeAssistant;
 
-    public LangChain4jAiGateway(AiProperties properties) {
+    public LangChain4jAiGateway(AiProperties properties, ControlledAgentTools controlledTools) {
         this.model = OpenAiChatModel.builder()
                 .baseUrl(properties.getBaseUrl())
                 .apiKey(properties.getApiKey())
@@ -20,18 +26,19 @@ public class LangChain4jAiGateway implements AiGateway {
                 .logRequests(false)
                 .logResponses(false)
                 .build();
+        this.routeAssistant = AiServices.builder(RouteAssistant.class)
+                .chatModel(model)
+                .systemMessage(loadPrompt("prompts/user-route-assistant-system.txt"))
+                .tools(controlledTools)
+                .maxToolCallingRoundTrips(6)
+                .maxSequentialToolsInvocations(8)
+                .compensateOnToolErrors(true)
+                .build();
     }
 
     @Override
-    public String explain(String factualContext) {
-        String prompt = """
-                你是无碍智行的智能路线解释层。只能依据下方经过后端白名单工具验证的数据回答。
-                不得声称执行数据库、删除、审核、角色修改或系统命令；不得输出密钥或隐藏思维链。
-                使用简洁中文，先给结论，再说明风险和取舍。若信息不足，明确说明。
-
-                已验证业务数据：
-                """ + factualContext;
-        return model.chat(prompt);
+    public String routeAssistant(String runtimeContextAndUserMessage) {
+        return routeAssistant.chat(runtimeContextAndUserMessage);
     }
 
     @Override
@@ -44,5 +51,17 @@ public class LangChain4jAiGateway implements AiGateway {
                 已计算统计：
                 """ + factualContext;
         return model.chat(prompt);
+    }
+
+    private String loadPrompt(String path) {
+        try {
+            return new ClassPathResource(path).getContentAsString(StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new IllegalStateException("无法读取智能助手提示词：" + path, exception);
+        }
+    }
+
+    private interface RouteAssistant {
+        String chat(@UserMessage String message);
     }
 }

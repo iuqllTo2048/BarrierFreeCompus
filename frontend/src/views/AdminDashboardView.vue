@@ -91,6 +91,9 @@ const draftCoordinate = computed<Coordinate | null>(() => {
   }
   return mode.value === 'EDGE' ? (edgePoints.value.at(-1) ?? null) : null;
 });
+const viewingExistingFacility = computed(
+  () => mode.value === 'FACILITY' && Boolean(editingId.value),
+);
 const editingInstruction = computed(() => {
   if (mode.value === 'EDGE') return edgeNodeHint.value;
   if (mode.value === 'NODE') return '点击地图设置道路节点位置，也可以在检查器中精确输入坐标';
@@ -378,6 +381,23 @@ function selectFeature(selection: { kind: FeatureKind; id: string }): void {
     edgeHistory.value = [];
     pathEditorOpen.value = true;
     edgeNodeHint.value = '正在编辑已有道路；起终点锁定，可拖动、增加或删除拐点';
+  } else if (selection.kind === 'facility') {
+    const item = snapshot.facilities.find((candidate) => candidate.id === selection.id);
+    if (!item) return;
+    mode.value = 'FACILITY';
+    editingId.value = item.id;
+    Object.assign(pointForm, {
+      externalId: item.externalId,
+      name: item.name,
+      buildingId: item.buildingId ?? '',
+      facilityType: item.facilityType,
+      floorLabel: item.floorLabel ?? '',
+      openStatus: item.openStatus,
+      description: item.description ?? '',
+      active: item.active,
+      coordinate: { lng: item.lng, lat: item.lat },
+    });
+    placementMessage.value = `已选择设施：${item.name}`;
   }
 }
 
@@ -419,6 +439,7 @@ async function deleteCurrentMapObject(): Promise<void> {
   > = {
     NODE: 'nodes',
     EDGE: 'edges',
+    FACILITY: 'facilities',
     SELECT: 'nodes',
   };
   const type = typeMap[mode.value];
@@ -862,7 +883,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
         </el-form>
 
         <el-form v-else label-position="top" @submit.prevent="saveCurrent">
-          <p class="interaction-hint">点击地图确定位置，或直接填写经纬度。</p>
+          <p v-if="viewingExistingFacility" class="interaction-hint" role="status">
+            当前为已有设施查看状态；删除后将从地图和设施服务中移除。
+          </p>
+          <p v-else class="interaction-hint">点击地图确定位置，或直接填写经纬度。</p>
+          <fieldset class="point-form-fields" :disabled="viewingExistingFacility">
           <el-form-item label="外部编号"><el-input v-model="pointForm.externalId" /></el-form-item>
           <el-form-item :label="mode === 'BARRIER' ? '障碍标题' : `${modeLabel(mode)}名称`">
             <el-input v-model="pointForm.name" />
@@ -963,8 +988,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleEditorKeyboard
             </el-form-item>
           </div>
           <el-form-item label="立即启用"><el-switch v-model="pointForm.active" /></el-form-item>
-          <el-button native-type="submit" type="primary" :loading="saving">
+          </fieldset>
+          <el-button
+            v-if="!viewingExistingFacility"
+            native-type="submit"
+            type="primary"
+            :loading="saving"
+          >
             保存{{ modeLabel(mode) }}
+          </el-button>
+          <el-button
+            v-if="viewingExistingFacility"
+            type="danger"
+            class="editor-delete-button"
+            :loading="deleting"
+            @click="deleteCurrentMapObject"
+          >
+            删除设施
           </el-button>
         </el-form>
       </aside>

@@ -21,6 +21,7 @@ const router = useRouter();
 const planning = ref(false);
 const result = ref<RoutePlanResponse | null>(null);
 const selectedRouteIndex = ref(0);
+const showCampusNetwork = ref(false);
 const selectionTarget = ref<'start' | 'end' | null>(null);
 const controlExpanded = ref(true);
 const resultsExpanded = ref(true);
@@ -45,6 +46,8 @@ const nodes = computed(
 );
 const routes = computed(() => result.value?.routes ?? []);
 const selectedRoute = computed(() => routes.value[selectedRouteIndex.value] ?? null);
+const mapRoutes = computed(() => (selectedRoute.value ? [selectedRoute.value] : []));
+const visibleRouteNodeIds = computed(() => nodes.value.map((node) => node.id));
 const mobilityOptions: Array<{ value: MobilityMode; label: string }> = [
   { value: 'WHEELCHAIR', label: '轮椅出行' },
   { value: 'CRUTCH', label: '拐杖辅助' },
@@ -88,6 +91,7 @@ async function submitPlan(): Promise<void> {
     ElMessage.warning('请先选择起点和终点');
     return;
   }
+  selectionTarget.value = null;
   planning.value = true;
   try {
     result.value = await planRoutes({
@@ -290,10 +294,15 @@ onMounted(async () => {
 
     <CampusMap
       :snapshot="mapData.snapshot"
-      :routes="routes"
-      :selected-route-index="selectedRouteIndex"
+      :routes="mapRoutes"
+      :selected-route-index="0"
+      :show-network="showCampusNetwork"
+      :show-route-nodes="showCampusNetwork || selectionTarget !== null"
+      :visible-route-node-ids="visibleRouteNodeIds"
+      show-network-toggle
       :start-node-id="form.startNodeId"
       :end-node-id="form.endNodeId"
+      @update:show-network="showCampusNetwork = $event"
       @feature-select="selectFeature"
     />
 

@@ -34,7 +34,10 @@ export interface RouteComparison {
     estimatedMinutes: number;
     riskLevel: string;
     stairsCount: number;
-    warningCount: number;
+    slopeSummary: Record<string, number>;
+    fallbackRoute: boolean;
+    confidence: string;
+    warnings: string[];
   }>;
   reasons: string[];
 }

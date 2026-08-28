@@ -32,7 +32,17 @@ const routeResult = ref<RoutePlanResponse | null>(null);
 const comparison = ref<RouteComparison | null>(null);
 const draft = ref<BarrierDraft | null>(null);
 const timeline = ref<TimelineItem[]>([]);
+const selectedRouteIndex = ref(0);
+const showCampusNetwork = ref(false);
 const routes = computed(() => routeResult.value?.routes ?? []);
+const selectedRoute = computed(() => routes.value[selectedRouteIndex.value] ?? null);
+const mapRoutes = computed(() => (selectedRoute.value ? [selectedRoute.value] : []));
+const visibleRouteNodeIds = computed(
+  () =>
+    mapData.snapshot?.nodes
+      .filter((node) => node.active && node.name?.trim() !== '新道路节点')
+      .map((node) => node.id) ?? [],
+);
 const modeOptions: Array<{ value: MobilityMode; label: string }> = [
   { value: 'WHEELCHAIR', label: '轮椅' },
   { value: 'CRUTCH', label: '拐杖' },
@@ -44,8 +54,11 @@ const toolLabels: Record<string, string> = {
   searchCampusPlace: '识别校园地点',
   calculateAccessibleRoutes: '计算无障碍路线',
   searchFacilitiesNearRoute: '核对沿途设施',
+  searchFacilitiesNearCurrentRoute: '核对沿途设施',
+  searchNearestAccessibleFacilities: '查询最近无障碍设施',
   searchActiveBarriers: '核对生效障碍',
   compareRoutes: '比较路线风险',
+  compareCurrentRoutes: '比较路线风险',
   createBarrierReportDraft: '生成上报草稿',
 };
 
@@ -78,8 +91,14 @@ function handleEvent(event: { name: string; data: unknown }): void {
     assistantText.value += data.text;
   } else if (event.name === 'route_result') {
     routeResult.value = event.data as RoutePlanResponse;
+    selectedRouteIndex.value = 0;
+    if (routeResult.value.routes.length === 0) comparison.value = null;
   } else if (event.name === 'comparison') {
     comparison.value = event.data as RouteComparison;
+    const recommendedIndex = comparison.value.routes.findIndex(
+      (route) => route.profile === comparison.value?.recommendedProfile,
+    );
+    selectedRouteIndex.value = recommendedIndex >= 0 ? recommendedIndex : 0;
   } else if (event.name === 'barrier_draft') {
     draft.value = event.data as BarrierDraft;
   } else if (event.name === 'error' && typeof data.message === 'string') {
@@ -92,8 +111,6 @@ async function send(example?: string): Promise<void> {
   if (!content || !mapData.selectedDatasetId || sending.value) return;
   sending.value = true;
   assistantText.value = '';
-  routeResult.value = null;
-  comparison.value = null;
   draft.value = null;
   timeline.value = [];
   try {
@@ -149,7 +166,16 @@ onMounted(async () => {
 <template>
   <section class="assistant-workspace" aria-labelledby="assistant-title">
     <div class="assistant-map">
-      <CampusMap :snapshot="mapData.snapshot" :routes="routes" :selected-route-index="0" />
+      <CampusMap
+        :snapshot="mapData.snapshot"
+        :routes="mapRoutes"
+        :selected-route-index="0"
+        :show-network="showCampusNetwork"
+        :show-route-nodes="showCampusNetwork"
+        :visible-route-node-ids="visibleRouteNodeIds"
+        show-network-toggle
+        @update:show-network="showCampusNetwork = $event"
+      />
       <div class="assistant-heading">
         <p class="eyebrow">自然语言入口 · 真实 A* 路网</p>
         <h1 id="assistant-title">智能路线助手</h1>
@@ -223,10 +249,14 @@ onMounted(async () => {
           <h3>路线对比</h3>
           <span>推荐：{{ profileLabel(comparison.recommendedProfile) }}</span>
         </div>
-        <article
-          v-for="route in comparison.routes"
+        <button
+          v-for="(route, index) in comparison.routes"
           :key="route.profile"
+          type="button"
           class="assistant-route-card"
+          :class="{ selected: index === selectedRouteIndex }"
+          :aria-pressed="index === selectedRouteIndex"
+          @click="selectedRouteIndex = index"
         >
           <strong>{{ profileLabel(route.profile) }}</strong>
           <span>{{ Math.round(route.distanceM) }} 米 · 约 {{ route.estimatedMinutes }} 分钟</span>
@@ -234,7 +264,8 @@ onMounted(async () => {
             {{ riskLabel(route.riskLevel) }} ·
             {{ route.stairsCount ? `${route.stairsCount} 级楼梯` : '无楼梯' }}
           </span>
-        </article>
+          <small v-if="index === selectedRouteIndex">地图正在显示此路线</small>
+        </button>
       </section>
 
       <section v-if="draft" class="barrier-draft" aria-labelledby="draft-title">
@@ -416,6 +447,7 @@ onMounted(async () => {
 .assistant-answer > p:last-child {
   margin-bottom: 0;
   line-height: 1.7;
+  white-space: pre-line;
 }
 .result-heading h3 {
   margin: 0 0 10px;
@@ -423,16 +455,37 @@ onMounted(async () => {
 }
 .assistant-route-card {
   display: grid;
+  width: 100%;
   gap: 4px;
   margin: 8px 0;
   padding: 12px;
+  color: var(--color-text-primary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-muted);
 }
+.assistant-route-card:hover {
+  border-color: var(--color-primary);
+}
+.assistant-route-card.selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+  background: var(--color-surface);
+}
+.assistant-route-card:focus-visible {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
 .assistant-route-card span {
   font-size: 13px;
   color: var(--color-text-secondary);
+}
+.assistant-route-card small {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 .risk-text {
   font-weight: 600;

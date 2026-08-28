@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.UUID;
 
 public final class AStarRouter {
@@ -34,10 +35,26 @@ public final class AStarRouter {
             TravelPeriod period,
             RoutePreferences preferences,
             boolean relaxed) {
+        return search(graph, startNodeId, endNodeId, profile, mode, period, preferences,
+                relaxed, SearchRestrictions.none());
+    }
+
+    SearchOutcome search(
+            RouteGraph.GraphData graph,
+            UUID startNodeId,
+            UUID endNodeId,
+            RouteProfile profile,
+            MobilityMode mode,
+            TravelPeriod period,
+            RoutePreferences preferences,
+            boolean relaxed,
+            SearchRestrictions restrictions) {
         long started = System.nanoTime();
         RouteGraph.Node start = graph.nodes().get(startNodeId);
         RouteGraph.Node end = graph.nodes().get(endNodeId);
-        if (start == null || end == null || !start.active() || !end.active()) {
+        if (start == null || end == null || !start.active() || !end.active()
+                || restrictions.blockedNodeIds().contains(startNodeId)
+                || restrictions.blockedNodeIds().contains(endNodeId)) {
             return SearchOutcome.notFound(metrics(0, 0, 0, started, 0), relaxed);
         }
         if (startNodeId.equals(endNodeId)) {
@@ -76,8 +93,12 @@ public final class AStarRouter {
             expandedNodes++;
             for (RouteGraph.Arc arc : graph.adjacency().getOrDefault(current.nodeId(), List.of())) {
                 visitedEdges++;
+                if (restrictions.blockedArcs().contains(ArcKey.of(arc))) {
+                    continue;
+                }
                 RouteGraph.Node target = graph.nodes().get(arc.toNodeId());
-                if (target == null || !target.active()) {
+                if (target == null || !target.active()
+                        || restrictions.blockedNodeIds().contains(target.id())) {
                     continue;
                 }
                 RouteCostPolicy.CostEvaluation evaluation =
@@ -134,7 +155,7 @@ public final class AStarRouter {
         return List.copyOf(path);
     }
 
-    private CostBreakdown evaluatePath(
+    CostBreakdown evaluatePath(
             List<RouteGraph.Arc> path,
             RouteProfile profile,
             MobilityMode mode,
@@ -163,6 +184,23 @@ public final class AStarRouter {
     }
 
     private record State(UUID nodeId, double costFromStart, double estimatedTotal) {
+    }
+
+    record ArcKey(UUID edgeId, UUID fromNodeId, UUID toNodeId) {
+        static ArcKey of(RouteGraph.Arc arc) {
+            return new ArcKey(arc.edge().id(), arc.fromNodeId(), arc.toNodeId());
+        }
+    }
+
+    record SearchRestrictions(Set<UUID> blockedNodeIds, Set<ArcKey> blockedArcs) {
+        SearchRestrictions {
+            blockedNodeIds = Set.copyOf(blockedNodeIds);
+            blockedArcs = Set.copyOf(blockedArcs);
+        }
+
+        static SearchRestrictions none() {
+            return new SearchRestrictions(Set.of(), Set.of());
+        }
     }
 
     record SearchOutcome(

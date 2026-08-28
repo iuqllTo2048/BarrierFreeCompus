@@ -1,7 +1,7 @@
 package cn.barrierfreecampus.agent;
 
 public interface AiGateway {
-    String explain(String factualContext);
+    String routeAssistant(String runtimeContextAndUserMessage);
 
     String summarizeGovernance(String factualContext);
 }

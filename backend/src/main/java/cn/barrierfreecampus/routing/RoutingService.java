@@ -23,10 +23,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class RoutingService {
+    private static final int MAX_ROUTE_RESULTS = 3;
     private final RoutingRepository repository;
     private final ObjectMapper objectMapper;
     private final RouteCostPolicy costPolicy = new RouteCostPolicy();
     private final AStarRouter router = new AStarRouter(costPolicy);
+    private final YenTopKRouter topKRouter = new YenTopKRouter(router);
 
     public RoutingService(RoutingRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
@@ -42,37 +44,38 @@ public class RoutingService {
         Map<List<UUID>, CandidateGroup> uniqueCandidates = new LinkedHashMap<>();
         List<String> notices = new ArrayList<>();
         for (RouteProfile profile : RouteProfile.values()) {
-            AStarRouter.SearchOutcome outcome = router.search(
-                    graph,
-                    request.startNodeId(),
-                    request.endNodeId(),
-                    profile,
-                    request.mobilityMode(),
-                    request.travelPeriod(),
-                    preferences,
-                    false);
-            if (!outcome.found()) {
-                outcome = router.search(
-                        graph,
-                        request.startNodeId(),
-                        request.endNodeId(),
-                        profile,
-                        request.mobilityMode(),
-                        request.travelPeriod(),
-                        preferences,
-                        true);
+            List<AStarRouter.SearchOutcome> outcomes = topKRouter.search(
+                    graph, request.startNodeId(), request.endNodeId(), profile,
+                    request.mobilityMode(), request.travelPeriod(), preferences,
+                    false, MAX_ROUTE_RESULTS);
+            if (outcomes.isEmpty()) {
+                outcomes = topKRouter.search(
+                        graph, request.startNodeId(), request.endNodeId(), profile,
+                        request.mobilityMode(), request.travelPeriod(), preferences,
+                        true, MAX_ROUTE_RESULTS);
             }
-            if (!outcome.found()) {
+            if (outcomes.isEmpty()) {
                 notices.add(profileLabel(profile) + "未找到可达路线");
                 continue;
             }
-            List<UUID> signature = outcome.path().stream().map(arc -> arc.edge().id()).toList();
-            CandidateGroup group = uniqueCandidates.get(signature);
-            if (group == null) {
-                uniqueCandidates.put(signature, new CandidateGroup(profile, new ArrayList<>(List.of(profile)), outcome));
+
+            AStarRouter.SearchOutcome selected = outcomes.stream()
+                    .filter(outcome -> !uniqueCandidates.containsKey(signature(outcome)))
+                    .findFirst()
+                    .orElse(null);
+            if (selected != null) {
+                uniqueCandidates.put(signature(selected),
+                        new CandidateGroup(profile, new ArrayList<>(List.of(profile)), selected));
+                if (selected != outcomes.getFirst()) {
+                    notices.add(profileLabel(profile) + "的最优结果与已有路线相同，已选择下一条不同候选");
+                }
             } else {
-                group.profiles().add(profile);
-                notices.add(profileLabel(profile) + "与" + profileLabel(group.primaryProfile()) + "结果相同，已合并展示");
+                CandidateGroup group = uniqueCandidates.get(signature(outcomes.getFirst()));
+                if (group != null) {
+                    group.profiles().add(profile);
+                    notices.add(profileLabel(profile) + "与" + profileLabel(group.primaryProfile())
+                            + "的可用候选均相同，已合并展示");
+                }
             }
         }
 
@@ -99,6 +102,10 @@ public class RoutingService {
                 routes,
                 List.copyOf(notices),
                 null);
+    }
+
+    private List<UUID> signature(AStarRouter.SearchOutcome outcome) {
+        return outcome.path().stream().map(arc -> arc.edge().id()).toList();
     }
 
     private RoutingDtos.RouteResult toResult(
