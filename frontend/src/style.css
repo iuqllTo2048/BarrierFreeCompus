@@ -34,10 +34,25 @@
   --el-color-info: var(--color-unknown);
   --el-border-radius-base: 8px;
   --el-border-color: var(--color-border);
+  --el-border-color-light: var(--color-border);
+  --el-border-color-lighter: var(--color-border);
   --el-fill-color-blank: var(--color-surface);
+  --el-fill-color: var(--color-surface-muted);
+  --el-fill-color-light: var(--color-surface-muted);
+  --el-fill-color-lighter: var(--color-surface-muted);
+  --el-fill-color-extra-light: var(--color-surface-muted);
   --el-bg-color: var(--color-surface);
+  --el-bg-color-page: var(--color-bg);
+  --el-bg-color-overlay: var(--color-surface);
   --el-text-color-primary: var(--color-text);
   --el-text-color-regular: var(--color-text-secondary);
+  --el-text-color-secondary: var(--color-text-secondary);
+  --el-text-color-placeholder: var(--color-text-secondary);
+  --el-text-color-disabled: var(--color-text-secondary);
+  --el-option-hover-bg-color: var(--color-surface-muted);
+  --el-disabled-bg-color: var(--color-surface-muted);
+  --el-disabled-text-color: var(--color-text-secondary);
+  --el-disabled-border-color: var(--color-border);
 }
 
 .agent-log-notice {

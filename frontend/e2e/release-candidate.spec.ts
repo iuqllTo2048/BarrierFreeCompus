@@ -111,6 +111,17 @@ test.describe('375px 移动端', () => {
     await page.getByRole('button', { name: '关闭主导航' }).click();
     await page.getByRole('button', { name: '切换到深色模式' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await page.getByRole('combobox', { name: '起点' }).click();
+    await expect(page.locator('.el-select__popper:visible').last()).toBeVisible();
+    const selectTheme = await page.locator('html').evaluate((element) => {
+      const styles = getComputedStyle(element);
+      return {
+        overlay: styles.getPropertyValue('--el-bg-color-overlay').trim(),
+        fillLight: styles.getPropertyValue('--el-fill-color-light').trim(),
+      };
+    });
+    expect(selectTheme.overlay).toBe('#172321');
+    expect(selectTheme.fillLight).toBe('#20302d');
     const routeSettings = page.getByRole('button', { name: /路线设置/ });
     await expect(routeSettings).toHaveAttribute('aria-expanded', 'true');
     await routeSettings.click();
