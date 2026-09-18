@@ -53,7 +53,7 @@ public class ControlledAgentTools {
     public RouteToolResult calculateAccessibleRoutes(
             @P("起点名称；缺少起点时不要调用，先询问用户") String startPlace,
             @P("终点名称；缺少终点时不要调用，先询问用户") String endPlace,
-            @P(value = "按用户要求依次经过的途经点名称，最多 3 个；没有时传空数组", required = false)
+            @P(value = "按用户要求依次经过的途经点名称，最多 8 个；没有时传空数组", required = false)
             List<String> waypointPlaces,
             @P("行动方式：WHEELCHAIR、CRUTCH、TEMPORARY_INJURY、CART_LUGGAGE 或 WALKING") String mobilityMode,
             @P(value = "用户是否明确偏好最短距离", required = false) Boolean preferShortest,
@@ -205,7 +205,7 @@ public class ControlledAgentTools {
 
     private List<String> normalizeWaypoints(List<String> waypointPlaces) {
         if (waypointPlaces == null) return List.of();
-        if (waypointPlaces.size() > 3) throw new IllegalArgumentException("途经点最多支持 3 个");
+        if (waypointPlaces.size() > 8) throw new IllegalArgumentException("途经点最多支持 8 个");
         return waypointPlaces.stream().map(value -> requireText(value, "途经点", 128)).toList();
     }
 

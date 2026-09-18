@@ -1,6 +1,6 @@
 # TEST_REPORT.md — 当前测试与验收基线
 
-> 基线更新：2026-09-02
+> 基线更新：2026-09-18
 >
 > 技术版本：`1.0.0`
 >
@@ -10,7 +10,7 @@
 
 | 层级 | 最近结果 | 主要覆盖 |
 |---|---:|---|
-| 后端 JUnit/Testcontainers | 83/83 通过 | JWT、权限、Flyway V1–V9、PostGIS、地图 CRUD、GeoJSON 预检/恢复、业务闭环、A*、Yen Top-K、途经点和受控 Tool |
+| 后端 JUnit/Testcontainers | 87/87 通过 | JWT、权限、Flyway V1–V9、PostGIS、地图 CRUD、GeoJSON 预检/恢复、业务闭环、A*、Yen Top-K、途经点和受控 Tool |
 | 前端 Vitest | 31/31 通过 | Session、地图 Store、几何、路线/设施/障碍视觉、主题、ECharts 与基础 UI |
 | 前端静态检查 | typecheck、ESLint、production build 通过 | Vue 模板、TypeScript 契约、代码规则与生产构建 |
 | Playwright | 隔离 Chromium Edge 7/7 通过 | 登录、权限、路线、地图编辑、Formal GeoJSON、XSS 与 375px 流程 |
@@ -25,6 +25,7 @@
 - 覆盖坡度、楼梯、宽度、路面、照明、UNKNOWN、软障碍、四类硬阻断、单向、同点、断路和风险降级。
 - `YenTopKRouterTest` 验证三条不同无环路线按加权成本排序，以及只有一条真实通路时不复制路线。
 - `RouteItineraryServiceTest` 验证途经点分段、相邻坐标去重、距离/时间/楼梯/风险汇总、设施和边 ID 合并，以及任一段不可达时整段失败。
+- 新增边界验证：8 个途经点合并为 9 段完整路线，第 9 个途经点在行程服务与 Agent 工具入口均被拒绝。
 - 固定 20×20 双向网格（400 节点）的核心 A* 基线：P50 413µs、P95 1,003µs、最大 3,034µs；门槛为 P95 < 250,000µs。Top-K 会多次调用 A*，该微基准不等同于完整接口或模型延迟。
 
 ## 3. 地图与数据安全
@@ -40,6 +41,7 @@
 - 自动测试固定 `AI_ENABLED=false`，不消耗或伪造外部模型额度。
 - 受控 Tool 测试覆盖可信用户/数据集上下文、参数校验、地点候选、调用日志、最近设施、障碍草稿不写正式表和提示词注入拒绝。
 - 普通路线及含一个途经点的两段路线均可返回三条不同完整候选；一次用户路线请求只记录一次 `calculateAccessibleRoutes` Tool 调用。
+- 当前上限为 8 个有序途经点；自动测试验证上限与拒绝边界，但尚未将真实模型的 8 途经点端到端耗时作为验收基线。
 - Provider 失败时保留已经完成的结构化 A* 结果，并返回“智能服务暂时不可用，基础路线规划仍可使用”。
 
 真实 DeepSeek 人工联调曾验证：

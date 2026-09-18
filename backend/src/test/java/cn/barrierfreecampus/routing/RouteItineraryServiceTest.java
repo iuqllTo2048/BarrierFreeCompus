@@ -2,14 +2,17 @@ package cn.barrierfreecampus.routing;
 
 import static cn.barrierfreecampus.routing.RoutingDtos.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class RouteItineraryServiceTest {
@@ -71,6 +74,43 @@ class RouteItineraryServiceTest {
 
         assertThat(itinerary.combined().routes()).isEmpty();
         assertThat(itinerary.combined().notices()).anyMatch(notice -> notice.contains("第 2 段"));
+    }
+
+    @Test
+    void shouldPlanEightWaypointsAsNineSegments() {
+        UUID datasetId = UUID.randomUUID();
+        List<UUID> ordered = IntStream.range(0, 10).mapToObj(ignored -> UUID.randomUUID()).toList();
+        UUID sharedFacility = UUID.randomUUID();
+        when(routingService.plan(any())).thenAnswer(invocation -> {
+            RoutePlanRequest request = invocation.getArgument(0);
+            int index = ordered.indexOf(request.startNodeId());
+            return segment(datasetId, request.startNodeId(), request.endNodeId(),
+                    UUID.randomUUID(), sharedFacility,
+                    "[[112." + index + ",28.1],[112." + (index + 1) + ",28.1]]",
+                    100, 1, "LOW", 0);
+        });
+
+        RouteItineraryService.ItineraryPlan itinerary = service.plan(datasetId, ordered,
+                MobilityMode.WALKING, TravelPeriod.DAY, RoutePreferences.defaults());
+
+        assertThat(itinerary.segments()).hasSize(9);
+        assertThat(itinerary.combined().routes()).hasSize(1);
+        RouteResult route = itinerary.combined().routes().getFirst();
+        assertThat(route.distanceM()).isEqualTo(900);
+        assertThat(route.estimatedMinutes()).isEqualTo(9);
+        assertThat(route.edgeIds()).hasSize(9);
+        assertThat(route.geometry().path("coordinates")).hasSize(10);
+    }
+
+    @Test
+    void shouldRejectNineWaypointsBeforeRouting() {
+        List<UUID> ordered = IntStream.range(0, 11).mapToObj(ignored -> UUID.randomUUID()).toList();
+
+        assertThatThrownBy(() -> service.plan(UUID.randomUUID(), ordered,
+                MobilityMode.WALKING, TravelPeriod.DAY, RoutePreferences.defaults()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("途经点最多支持 8 个");
+        verifyNoInteractions(routingService);
     }
 
     private RoutePlanResponse segment(UUID datasetId, UUID start, UUID end, UUID edgeId,

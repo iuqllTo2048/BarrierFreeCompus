@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RouteItineraryService {
-    private static final int MAX_WAYPOINTS = 3;
+    private static final int MAX_WAYPOINTS = 8;
     private final RoutingService routingService;
     private final ObjectMapper objectMapper;
 

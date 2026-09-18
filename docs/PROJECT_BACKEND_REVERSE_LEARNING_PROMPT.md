@@ -376,7 +376,7 @@ N 个途经点形成 N+1 段。任一段不可达则整条行程不可达；全�
 }
 ```
 
-LangChain4j 只注册白名单。`ControlledAgentTools` 校验文本、枚举、最多三个途经点和地点歧义；模型不能提交任意 SQL、Shell、坐标、身份或数据集。`AgentExecutionContext` 保存可信状态、限制工具次数并阻止同参数重复调用。
+LangChain4j 只注册白名单。`ControlledAgentTools` 校验文本、枚举、最多八个途经点和地点歧义；模型不能提交任意 SQL、Shell、坐标、身份或数据集。`AgentExecutionContext` 保存可信状态、限制工具次数并阻止同参数重复调用。
 
 信任顺序是 A*/数据库/工具结果高于已确认上下文，后者高于未经验证的自然语言。写操作只能生成草稿。AI 关闭或 DeepSeek 失败时，确定性流程保留基础路线或草稿能力。
 

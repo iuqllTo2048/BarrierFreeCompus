@@ -822,6 +822,15 @@ class MapDataIntegrationTest {
     }
 
     @Test
+    void controlledAgentToolMustRejectNineWaypoints() {
+        assertThatThrownBy(() -> controlledAgentTools.calculateAccessibleRoutes(
+                "图书馆", "体育与健康中心", java.util.Collections.nCopies(9, "中央广场北"),
+                "WALKING", false, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("途经点最多支持 8 个");
+    }
+
+    @Test
     void agentBarrierToolMustCreateDraftWithoutWritingFormalReport() {
         AgentDtos.ConversationView conversation = agentRepository.createConversation(
                 "demo_user", "障碍草稿测试", aiProperties);

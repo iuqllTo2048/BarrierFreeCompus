@@ -99,7 +99,7 @@ GeoJSON v2 导出六类可共享地图对象，不包含普通用户上报与用
 | PUT | `/api/agent/drafts/{id}/confirmed` | USER/ADMIN | 在正式上报成功后标记自己的草稿已确认 |
 | GET | `/api/admin/agent/invocations` | ADMIN | 脱敏调用和 Tool 日志 |
 
-助手路线 Tool 可接收起点、终点和最多 3 个有序途经点。模型只提交地点名称；后端完成歧义校验、逐段 A* 和完整 GeoJSON 合并。SSE 事件与安全边界见 [AGENT.md](AGENT.md)。
+助手路线 Tool 可接收起点、终点和最多 8 个有序途经点。模型只提交地点名称；后端完成歧义校验、逐段 A* 和完整 GeoJSON 合并。SSE 事件与安全边界见 [AGENT.md](AGENT.md)。
 
 ## 7. 治理洞察
 
