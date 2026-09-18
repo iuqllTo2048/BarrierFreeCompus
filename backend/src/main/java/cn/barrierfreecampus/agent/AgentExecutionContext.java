@@ -3,9 +3,11 @@ package cn.barrierfreecampus.agent;
 import static cn.barrierfreecampus.agent.AgentDtos.BarrierDraftView;
 import static cn.barrierfreecampus.agent.AgentDtos.PlaceResult;
 import static cn.barrierfreecampus.agent.AgentDtos.RouteComparison;
+import static cn.barrierfreecampus.agent.AgentDtos.RouteDisplaySegment;
 
 import cn.barrierfreecampus.routing.RoutingDtos.RoutePlanResponse;
 import java.util.UUID;
+import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -48,6 +50,7 @@ public final class AgentExecutionContext {
         private int toolCalls;
         private RoutePlanResponse routeResult;
         private RouteComparison comparison;
+        private List<RouteDisplaySegment> routeSegments = List.of();
         private BarrierDraftView barrierDraft;
         private PlaceResult startPlace;
         private PlaceResult endPlace;
@@ -81,11 +84,13 @@ public final class AgentExecutionContext {
         public UUID invocationId() { return invocationId; }
         public RoutePlanResponse routeResult() { return routeResult; }
         public RouteComparison comparison() { return comparison; }
+        public List<RouteDisplaySegment> routeSegments() { return routeSegments; }
         public BarrierDraftView barrierDraft() { return barrierDraft; }
         public PlaceResult startPlace() { return startPlace; }
         public PlaceResult endPlace() { return endPlace; }
         public void routeResult(RoutePlanResponse value) { routeResult = value; }
         public void comparison(RouteComparison value) { comparison = value; }
+        public void routeSegments(List<RouteDisplaySegment> value) { routeSegments = List.copyOf(value); }
         public void barrierDraft(BarrierDraftView value) { barrierDraft = value; }
         public void endpoints(PlaceResult start, PlaceResult end) {
             startPlace = start;

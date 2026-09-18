@@ -12,6 +12,7 @@ import type {
   BarrierDraft,
   ConversationView,
   RouteComparison,
+  RouteDisplaySegment,
 } from '../types/agent';
 import type { MobilityMode, RoutePlanResponse } from '../types/map';
 
@@ -30,6 +31,9 @@ const sending = ref(false);
 const assistantText = ref('');
 const routeResult = ref<RoutePlanResponse | null>(null);
 const comparison = ref<RouteComparison | null>(null);
+const routeSegments = ref<RouteDisplaySegment[]>([]);
+const activeSegmentIndex = ref<number | null>(null);
+const playbackRevision = ref(0);
 const draft = ref<BarrierDraft | null>(null);
 const timeline = ref<TimelineItem[]>([]);
 const selectedRouteIndex = ref(0);
@@ -37,6 +41,30 @@ const showCampusNetwork = ref(false);
 const routes = computed(() => routeResult.value?.routes ?? []);
 const selectedRoute = computed(() => routes.value[selectedRouteIndex.value] ?? null);
 const mapRoutes = computed(() => (selectedRoute.value ? [selectedRoute.value] : []));
+const selectedSegments = computed(() =>
+  routeSegments.value.filter((segment) => segment.profile === selectedRoute.value?.profile),
+);
+const activeSegment = computed(() =>
+  selectedSegments.value.find((segment) => segment.index === activeSegmentIndex.value),
+);
+
+function selectRoute(index: number): void {
+  selectedRouteIndex.value = index;
+  activeSegmentIndex.value = null;
+  playbackRevision.value++;
+}
+
+function selectSegment(index: number | null): void {
+  activeSegmentIndex.value = index;
+  playbackRevision.value++;
+}
+
+function moveSegment(offset: number): void {
+  if (!selectedSegments.value.length) return;
+  const current = activeSegmentIndex.value ?? (offset > 0 ? 0 : selectedSegments.value.length + 1);
+  const next = Math.max(1, Math.min(selectedSegments.value.length, current + offset));
+  selectSegment(next);
+}
 const visibleRouteNodeIds = computed(
   () =>
     mapData.snapshot?.nodes
@@ -92,13 +120,17 @@ function handleEvent(event: { name: string; data: unknown }): void {
   } else if (event.name === 'route_result') {
     routeResult.value = event.data as RoutePlanResponse;
     selectedRouteIndex.value = 0;
+    routeSegments.value = [];
+    activeSegmentIndex.value = null;
     if (routeResult.value.routes.length === 0) comparison.value = null;
+  } else if (event.name === 'route_segments') {
+    routeSegments.value = event.data as RouteDisplaySegment[];
   } else if (event.name === 'comparison') {
     comparison.value = event.data as RouteComparison;
     const recommendedIndex = comparison.value.routes.findIndex(
       (route) => route.profile === comparison.value?.recommendedProfile,
     );
-    selectedRouteIndex.value = recommendedIndex >= 0 ? recommendedIndex : 0;
+    selectRoute(recommendedIndex >= 0 ? recommendedIndex : 0);
   } else if (event.name === 'barrier_draft') {
     draft.value = event.data as BarrierDraft;
   } else if (event.name === 'error' && typeof data.message === 'string') {
@@ -169,6 +201,9 @@ onMounted(async () => {
       <CampusMap
         :snapshot="mapData.snapshot"
         :routes="mapRoutes"
+        :route-segments="selectedSegments"
+        :active-segment-index="activeSegmentIndex"
+        :playback-revision="playbackRevision"
         :selected-route-index="0"
         :show-network="showCampusNetwork"
         :show-route-nodes="showCampusNetwork"
@@ -256,7 +291,7 @@ onMounted(async () => {
           class="assistant-route-card"
           :class="{ selected: index === selectedRouteIndex }"
           :aria-pressed="index === selectedRouteIndex"
-          @click="selectedRouteIndex = index"
+          @click="selectRoute(index)"
         >
           <strong>{{ profileLabel(route.profile) }}</strong>
           <span>{{ Math.round(route.distanceM) }} 米 · 约 {{ route.estimatedMinutes }} 分钟</span>
@@ -266,6 +301,44 @@ onMounted(async () => {
           </span>
           <small v-if="index === selectedRouteIndex">地图正在显示此路线</small>
         </button>
+        <div v-if="selectedSegments.length > 1" class="assistant-segments">
+          <div class="assistant-segments-header">
+            <h4>行程分段</h4>
+            <button type="button" @click="selectSegment(null)">查看全程</button>
+          </div>
+          <button
+            v-for="segment in selectedSegments"
+            :key="`${segment.profile}-${segment.index}`"
+            type="button"
+            class="assistant-segment"
+            :class="{ selected: activeSegmentIndex === segment.index }"
+            :aria-pressed="activeSegmentIndex === segment.index"
+            @click="selectSegment(segment.index)"
+          >
+            <strong
+              >第 {{ segment.index }} 段 · {{ segment.startName }} → {{ segment.endName }}</strong
+            >
+            <span
+              >{{ Math.round(segment.distanceM) }} 米 · 约 {{ segment.estimatedMinutes }} 分钟 ·
+              {{ riskLabel(segment.riskLevel) }}</span
+            >
+          </button>
+          <div class="assistant-segment-controls">
+            <button type="button" :disabled="activeSegmentIndex === 1" @click="moveSegment(-1)">
+              上一段
+            </button>
+            <span aria-live="polite">{{
+              activeSegment ? `第 ${activeSegment.index} 段已高亮` : '当前显示全程'
+            }}</span>
+            <button
+              type="button"
+              :disabled="activeSegmentIndex === selectedSegments.length"
+              @click="moveSegment(1)"
+            >
+              下一段
+            </button>
+          </div>
+        </div>
       </section>
 
       <section v-if="draft" class="barrier-draft" aria-labelledby="draft-title">
@@ -486,6 +559,66 @@ onMounted(async () => {
 .assistant-route-card small {
   color: var(--color-primary);
   font-weight: 600;
+}
+.assistant-segments {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.assistant-segments-header,
+.assistant-segment-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.assistant-segments h4 {
+  margin: 0;
+  font-size: 14px;
+}
+.assistant-segments-header button,
+.assistant-segment-controls button {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+.assistant-segment-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.assistant-segment-controls span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.assistant-segment {
+  display: grid;
+  width: 100%;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+.assistant-segment.selected {
+  border-color: var(--color-focus);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 1px var(--color-focus);
+}
+.assistant-segment span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.assistant-segments button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 .risk-text {
   font-weight: 600;

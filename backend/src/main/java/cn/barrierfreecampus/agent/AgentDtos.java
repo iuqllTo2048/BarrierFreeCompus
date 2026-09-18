@@ -3,6 +3,7 @@ package cn.barrierfreecampus.agent;
 import cn.barrierfreecampus.business.BusinessDtos.BarrierSubmitRequest;
 import cn.barrierfreecampus.routing.RoutingDtos.MobilityMode;
 import cn.barrierfreecampus.routing.RoutingDtos.RoutePlanResponse;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -45,6 +46,10 @@ public final class AgentDtos {
                                   String message) {}
     public record RouteSegmentSummary(int index, String startName, String endName,
                                       List<RouteComparisonItem> routes, List<String> notices) {}
+    /** 仅供地图展示；模型仍只接收上方的分段摘要。 */
+    public record RouteDisplaySegment(String profile, int index, String startName, String endName,
+                                      JsonNode geometry, double distanceM, long estimatedMinutes,
+                                      String riskLevel) {}
     public record NearestFacilityToolResult(String status, String originName,
                                             List<PlaceResult> originCandidates,
                                             List<NearestFacilitySummary> facilities, String message) {}

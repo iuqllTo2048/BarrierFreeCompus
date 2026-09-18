@@ -186,6 +186,21 @@ public class ControlledAgentTools {
             segments.add(new RouteSegmentSummary(index + 1, orderedPlaces.get(index).name(),
                     orderedPlaces.get(index + 1).name(), summarizeRoutes(segment), segment.notices()));
         }
+        List<RouteDisplaySegment> displaySegments = new ArrayList<>();
+        for (var combinedRoute : response.routes()) {
+            for (int index = 0; index < itinerary.segments().size(); index++) {
+                var leg = itinerary.segments().get(index).routes().stream()
+                        .filter(route -> route.profile() == combinedRoute.profile()
+                                || route.equivalentProfiles().contains(combinedRoute.profile()))
+                        .findFirst().orElse(null);
+                if (leg != null) {
+                    displaySegments.add(new RouteDisplaySegment(combinedRoute.profile().name(), index + 1,
+                            orderedPlaces.get(index).name(), orderedPlaces.get(index + 1).name(),
+                            leg.geometry(), leg.distanceM(), leg.estimatedMinutes(), leg.riskSummary().level()));
+                }
+            }
+        }
+        context.routeSegments(displaySegments);
         String message = response.routes().isEmpty() ? "后端 A* 未找到完整可达路线"
                 : waypointPlaces.isEmpty() ? "路线已由后端 A* 计算"
                 : "已按 " + waypointPlaces.size() + " 个途经点拆分为 "

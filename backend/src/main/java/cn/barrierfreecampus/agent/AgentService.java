@@ -118,6 +118,9 @@ public class AgentService {
             }
             emitText(emitter, result.text());
             if (result.routeResult() != null) emit(emitter, "route_result", result.routeResult());
+            if (result.routeResult() != null && !turnContext.routeSegments().isEmpty()) {
+                emit(emitter, "route_segments", turnContext.routeSegments());
+            }
             if (result.comparison() != null) emit(emitter, "comparison", result.comparison());
             if (result.barrierDraft() != null) emit(emitter, "barrier_draft", result.barrierDraft());
             repository.addMessage(conversationId, "ASSISTANT", result.text(), requestId);

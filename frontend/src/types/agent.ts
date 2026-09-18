@@ -1,4 +1,4 @@
-import type { MobilityMode } from './map';
+import type { GeoJsonGeometry, MobilityMode, RouteProfile, RiskLevel } from './map';
 
 export interface ConversationView {
   id: string;
@@ -40,6 +40,17 @@ export interface RouteComparison {
     warnings: string[];
   }>;
   reasons: string[];
+}
+
+export interface RouteDisplaySegment {
+  profile: RouteProfile;
+  index: number;
+  startName: string;
+  endName: string;
+  geometry: GeoJsonGeometry;
+  distanceM: number;
+  estimatedMinutes: number;
+  riskLevel: RiskLevel;
 }
 
 export interface BarrierDraft {

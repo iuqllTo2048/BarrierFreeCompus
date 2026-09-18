@@ -811,6 +811,14 @@ class MapDataIntegrationTest {
             assertThat(result.waypointNames()).containsExactly("中央广场北");
             assertThat(result.segments()).hasSize(2);
             assertThat(result.routes()).hasSize(3);
+            assertThat(context.routeSegments()).hasSize(6);
+            assertThat(context.routeSegments()).allSatisfy(segment -> {
+                assertThat(segment.index()).isBetween(1, 2);
+                assertThat(segment.geometry().path("coordinates").size()).isGreaterThan(1);
+            });
+            assertThat(context.routeSegments().stream().filter(segment ->
+                    segment.profile().equals(context.routeResult().routes().getFirst().profile().name()))
+                    .map(AgentDtos.RouteDisplaySegment::index)).containsExactly(1, 2);
             assertThat(context.routeResult().routes()).isNotEmpty().allSatisfy(route ->
                     assertThat(route.geometry().path("coordinates").size()).isGreaterThan(2));
             assertThat(jdbcTemplate.queryForObject(

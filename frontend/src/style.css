@@ -1338,6 +1338,86 @@ h2 {
   border-color: var(--color-primary);
   background: var(--color-surface-muted);
 }
+.map-route-playback,
+.map-route-motion-disabled {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  z-index: 180;
+  display: grid;
+  min-width: 112px;
+  min-height: 44px;
+  padding: 5px 10px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-map);
+  cursor: pointer;
+  text-align: left;
+}
+.map-route-motion-disabled {
+  cursor: default;
+}
+.map-route-playback:hover {
+  border-color: var(--color-primary);
+}
+.map-route-playback small,
+.map-route-motion-disabled small {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+.route-motion-dot {
+  display: block;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-focus);
+  box-shadow: 0 0 0 1px var(--color-text);
+  pointer-events: none;
+}
+.route-motion-dot.is-lead {
+  width: 18px;
+  height: 18px;
+  border-color: var(--color-surface);
+  background: var(--color-primary);
+}
+.map-symbol.waypoint-symbol {
+  color: var(--color-surface);
+  background: var(--color-secondary);
+  border-color: var(--color-surface);
+}
+.map-symbol.start-symbol {
+  color: var(--color-surface);
+  background: var(--color-primary);
+}
+.map-symbol.end-symbol {
+  color: var(--color-surface);
+  background: var(--color-secondary);
+}
+.map-symbol.waypoint-symbol.is-muted {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-unknown) 48%, var(--color-surface));
+  border-color: var(--color-border);
+}
+.map-symbol.waypoint-symbol.is-active,
+.map-symbol.start-symbol.is-active {
+  color: var(--color-surface);
+  background: var(--color-focus);
+  border-color: var(--color-surface);
+  box-shadow:
+    0 0 0 2px var(--color-focus),
+    var(--shadow-map);
+}
+.map-symbol.route-stop-symbol {
+  cursor: default;
+}
+.map-route-playback:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
 .map-legend span {
   display: inline-flex;
   align-items: center;

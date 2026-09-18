@@ -12,6 +12,17 @@ import {
   profileLabel,
 } from '../services/map-visuals';
 import { DEFAULT_CAMPUS_CENTER } from '../services/map-geometry';
+import {
+  dotProgress,
+  measureRoute,
+  pointAtProgress,
+  ROUTE_CYCLE_MS,
+  ROUTE_CYCLES,
+  ROUTE_DOT_COUNT,
+  waypointMarkerState,
+  type MeasuredRoute,
+} from '../services/route-animation';
+import type { RouteDisplaySegment } from '../types/agent';
 import type { Coordinate, GeoJsonGeometry, MapSnapshot, RouteResult } from '../types/map';
 
 interface LngLatValue {
@@ -25,6 +36,12 @@ interface MapClickEvent {
 
 interface SelectableOverlay {
   on(event: 'click', handler: () => void): void;
+}
+
+interface MovingMarker extends SelectableOverlay {
+  setPosition(position: [number, number]): void;
+  show(): void;
+  hide(): void;
 }
 
 interface EditablePolyline extends SelectableOverlay {
@@ -65,7 +82,7 @@ interface AMapApi {
   Polygon: new (options: Record<string, unknown>) => SelectableOverlay;
   Polyline: new (options: Record<string, unknown>) => EditablePolyline;
   CircleMarker: new (options: Record<string, unknown>) => SelectableOverlay;
-  Marker: new (options: Record<string, unknown>) => SelectableOverlay;
+  Marker: new (options: Record<string, unknown>) => MovingMarker;
   Pixel: new (x: number, y: number) => unknown;
   ToolBar: new (options?: Record<string, unknown>) => unknown;
   Scale: new (options?: Record<string, unknown>) => unknown;
@@ -83,6 +100,9 @@ const props = withDefaults(
     editable?: boolean;
     selectedId?: string | null;
     routes?: RouteResult[];
+    routeSegments?: RouteDisplaySegment[];
+    activeSegmentIndex?: number | null;
+    playbackRevision?: number;
     selectedRouteIndex?: number;
     showNetwork?: boolean;
     showRouteNodes?: boolean;
@@ -102,6 +122,9 @@ const props = withDefaults(
     editable: false,
     selectedId: null,
     routes: () => [],
+    routeSegments: () => [],
+    activeSegmentIndex: null,
+    playbackRevision: 0,
     selectedRouteIndex: 0,
     showNetwork: true,
     showRouteNodes: true,
@@ -184,6 +207,125 @@ let heatMap: HeatMapInstance | null = null;
 let polylineEditor: PolylineEditorInstance | null = null;
 let fittedDatasetId: string | null = null;
 let fittedRouteKey: string | null = null;
+let animationKey: string | null = null;
+let animationRoute: MeasuredRoute | null = null;
+let animationMarkers: MovingMarker[] = [];
+let animationFrame = 0;
+let animationElapsedMs = 0;
+let animationLastTimestamp: number | null = null;
+const animationPlaying = ref(false);
+const animationDone = ref(false);
+const reducedMotion = ref(false);
+let motionQuery: MediaQueryList | null = null;
+
+function clearAnimation(): void {
+  if (animationFrame) cancelAnimationFrame(animationFrame);
+  animationFrame = 0;
+  if (map && animationMarkers.length) map.remove(animationMarkers);
+  animationMarkers = [];
+  animationRoute = null;
+  animationLastTimestamp = null;
+  animationElapsedMs = 0;
+  animationPlaying.value = false;
+  animationDone.value = false;
+}
+
+function animationTick(timestamp: number): void {
+  if (!animationPlaying.value || !animationRoute) return;
+  if (!document.hidden && animationLastTimestamp !== null) {
+    animationElapsedMs += timestamp - animationLastTimestamp;
+  }
+  animationLastTimestamp = document.hidden ? null : timestamp;
+  animationMarkers.forEach((marker, index) => {
+    const progress = dotProgress(animationElapsedMs, index);
+    if (progress === null) {
+      marker.hide();
+      return;
+    }
+    const point = pointAtProgress(animationRoute!, progress);
+    marker.setPosition([point.lng, point.lat]);
+    marker.show();
+  });
+  if (animationElapsedMs >= ROUTE_CYCLE_MS * ROUTE_CYCLES) {
+    animationPlaying.value = false;
+    animationDone.value = true;
+    animationFrame = 0;
+    return;
+  }
+  animationFrame = requestAnimationFrame(animationTick);
+}
+
+function playAnimation(restart = false): void {
+  if (!animationRoute || reducedMotion.value) return;
+  if (restart) animationElapsedMs = 0;
+  if (animationFrame) cancelAnimationFrame(animationFrame);
+  animationLastTimestamp = null;
+  animationDone.value = false;
+  animationPlaying.value = true;
+  animationFrame = requestAnimationFrame(animationTick);
+}
+
+function toggleAnimation(): void {
+  if (animationPlaying.value) {
+    animationPlaying.value = false;
+    animationLastTimestamp = null;
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = 0;
+  } else {
+    playAnimation(animationDone.value);
+  }
+}
+
+function syncRouteAnimation(routeKey: string | null): void {
+  if (!map || !api) return;
+  const route = props.routes[props.selectedRouteIndex];
+  const activeSegment = props.routeSegments.find(
+    (segment) => segment.profile === route?.profile && segment.index === props.activeSegmentIndex,
+  );
+  const playbackKey = routeKey
+    ? `${routeKey}:segment:${activeSegment?.index ?? 'all'}:play:${props.playbackRevision}`
+    : null;
+  if (animationKey === playbackKey) return;
+  clearAnimation();
+  animationKey = playbackKey;
+  if (!route || !routeKey || reducedMotion.value) return;
+  animationRoute = measureRoute(coordinates(activeSegment?.geometry ?? route.geometry));
+  if (!animationRoute) return;
+  const start = animationRoute.points[0];
+  for (let index = 0; index < ROUTE_DOT_COUNT; index++) {
+    const dot = document.createElement('span');
+    dot.className = index === 0 ? 'route-motion-dot is-lead' : 'route-motion-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    const marker = new api.Marker({
+      position: [start.lng, start.lat],
+      content: dot,
+      offset: new api.Pixel(index === 0 ? -9 : -8, index === 0 ? -9 : -8),
+      clickable: false,
+      zIndex: 205,
+    });
+    animationMarkers.push(marker);
+  }
+  map.add(animationMarkers);
+  animationMarkers.forEach((marker) => marker.hide());
+  playAnimation();
+}
+
+function handleMotionChange(event: MediaQueryListEvent): void {
+  reducedMotion.value = event.matches;
+  animationKey = null;
+  syncRouteAnimation(
+    props.routes.length
+      ? props.routes
+          .map((route) => `${route.profile}:${JSON.stringify(route.geometry.coordinates)}`)
+          .join('|')
+      : null,
+  );
+}
+
+function handleVisibilityChange(): void {
+  // 后台标签页会暂停 requestAnimationFrame；回来后不要把离开时间算进播放进度。
+  animationLastTimestamp = null;
+}
 
 function coordinates(geometry: GeoJsonGeometry): number[][] {
   return geometry.coordinates as number[][];
@@ -230,6 +372,14 @@ function markerContent(
   element.setAttribute('aria-label', label);
   element.setAttribute('title', label);
   if (selected) element.setAttribute('aria-pressed', 'true');
+  return element;
+}
+
+function routeStopContent(text: string, className: string): HTMLElement {
+  const element = document.createElement('span');
+  element.className = `map-symbol route-stop-symbol ${className}`;
+  element.textContent = text;
+  element.setAttribute('aria-hidden', 'true');
   return element;
 }
 
@@ -289,6 +439,11 @@ function renderSnapshot(): void {
 
   const amap = api;
   const routeOverlays: unknown[] = [];
+  const selectedRoute = props.routes[props.selectedRouteIndex];
+  const routeSegments = selectedRoute
+    ? props.routeSegments.filter((segment) => segment.profile === selectedRoute.profile)
+    : [];
+  const activeSegment = routeSegments.find((segment) => segment.index === props.activeSegmentIndex);
   props.routes.forEach((route, index) => {
     const active = index === props.selectedRouteIndex;
     const style = routeStyle(route.profile);
@@ -296,7 +451,7 @@ function renderSnapshot(): void {
       path: coordinates(route.geometry),
       strokeColor: style.color,
       strokeWeight: active ? style.weight + 2 : style.weight,
-      strokeOpacity: active ? 0.96 : 0.58,
+      strokeOpacity: activeSegment && active ? 0.38 : active ? 0.96 : 0.58,
       strokeStyle: style.dashed ? 'dashed' : 'solid',
       lineJoin: 'round',
       lineCap: 'round',
@@ -306,6 +461,40 @@ function renderSnapshot(): void {
     overlays.push(overlay);
     routeOverlays.push(overlay);
   });
+
+  if (routeSegments.length > 1) {
+    if (activeSegment) {
+      overlays.push(
+        new api.Polyline({
+          path: coordinates(activeSegment.geometry),
+          strokeColor: cssColor('--color-focus', '#0b6e99'),
+          strokeWeight: 8,
+          strokeOpacity: 0.95,
+          strokeStyle: 'solid',
+          showDir: true,
+          lineJoin: 'round',
+          lineCap: 'round',
+          zIndex: 180,
+        }),
+      );
+    }
+    for (const segment of routeSegments.slice(0, -1)) {
+      const end = coordinates(segment.geometry).at(-1);
+      if (!end) continue;
+      const state = waypointMarkerState(segment.index, activeSegment?.index ?? null);
+      const markerState = state === 'normal' ? '' : `is-${state}`;
+      overlays.push(
+        new api.Marker({
+          position: [end[0], end[1]],
+          content: routeStopContent(String(segment.index), `waypoint-symbol ${markerState}`),
+          offset: new api.Pixel(-16, -16),
+          title: `途经点 ${segment.index}：${segment.endName}`,
+          clickable: false,
+          zIndex: 195,
+        }),
+      );
+    }
+  }
 
   const visibleNodes = props.showRouteNodes
     ? props.snapshot.nodes.filter(
@@ -375,12 +564,38 @@ function renderSnapshot(): void {
     if (!node) continue;
     const overlay = new api.Marker({
       position: [node.lng, node.lat],
-      content: markerContent(null, endpoint.text, endpoint.className, endpoint.label),
+      content: routeStopContent(endpoint.text, endpoint.className),
       offset: new api.Pixel(-16, -16),
       title: `${endpoint.label}：${node.name ?? node.externalId}`,
+      clickable: false,
       zIndex: 190,
     });
     overlays.push(overlay);
+  }
+
+  if (selectedRoute && !props.startNodeId && !props.endNodeId) {
+    const path = coordinates(selectedRoute.geometry);
+    for (const endpoint of [
+      {
+        point: path[0],
+        text: '起',
+        className: `start-symbol${activeSegment?.index === 1 ? ' is-active' : ''}`,
+        label: '路线起点',
+      },
+      { point: path.at(-1), text: '终', className: 'end-symbol', label: '路线终点' },
+    ]) {
+      if (!endpoint.point) continue;
+      overlays.push(
+        new api.Marker({
+          position: [endpoint.point[0], endpoint.point[1]],
+          content: routeStopContent(endpoint.text, endpoint.className),
+          offset: new api.Pixel(-16, -16),
+          title: endpoint.label,
+          clickable: false,
+          zIndex: 195,
+        }),
+      );
+    }
   }
 
   map.add(overlays);
@@ -390,6 +605,7 @@ function renderSnapshot(): void {
         .join('|')
     : null;
   if (!routeKey) fittedRouteKey = null;
+  syncRouteAnimation(routeKey);
   if (routeKey && routeKey !== fittedRouteKey) {
     map.setFitView(routeOverlays, false, [72, 72, 72, 72]);
     fittedRouteKey = routeKey;
@@ -559,6 +775,9 @@ watch(
       props.snapshot,
       props.selectedId,
       props.routes,
+      props.routeSegments,
+      props.activeSegmentIndex,
+      props.playbackRevision,
       props.selectedRouteIndex,
       props.showNetwork,
       props.showRouteNodes,
@@ -586,10 +805,17 @@ watch(
 
 onMounted(() => {
   window.addEventListener('theme-change', handleThemeChange);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+  reducedMotion.value = motionQuery.matches;
+  motionQuery.addEventListener('change', handleMotionChange);
   void initialize();
 });
 onBeforeUnmount(() => {
   window.removeEventListener('theme-change', handleThemeChange);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+  motionQuery?.removeEventListener('change', handleMotionChange);
+  clearAnimation();
   heatMap?.setMap(null);
   clearEditingOverlays();
   map?.destroy();
@@ -635,6 +861,25 @@ onBeforeUnmount(() => {
       <AppIcon name="route" :size="16" />
       {{ showNetwork ? '隐藏校园路网' : '显示校园路网' }}
     </button>
+    <button
+      v-if="routes.length && !loading && !error && !reducedMotion"
+      type="button"
+      class="map-route-playback"
+      :aria-label="
+        animationPlaying ? '暂停路线演示' : animationDone ? '重播路线演示' : '继续路线演示'
+      "
+      @click="toggleAnimation"
+    >
+      {{ animationPlaying ? '暂停演示' : animationDone ? '重播演示' : '继续演示' }}
+      <small>非实时定位</small>
+    </button>
+    <div
+      v-else-if="routes.length && !loading && !error && reducedMotion"
+      class="map-route-motion-disabled"
+      role="status"
+    >
+      系统已开启减少动效<small>路线动画已停用</small>
+    </div>
     <div class="map-legend" aria-label="地图图例">
       <span v-if="showRouteNodes"><i class="legend-node" />可选地点</span>
       <template v-if="showNetwork">
@@ -649,7 +894,9 @@ onBeforeUnmount(() => {
         ><i class="legend-symbol barrier-symbol"><AppIcon name="warning" :size="14" /></i>障碍</span
       >
       <span v-for="route in routes" :key="route.profile">
-        <i :class="`legend-route ${route.profile.toLowerCase()}`" />{{ profileLabel(route.profile) }}
+        <i :class="`legend-route ${route.profile.toLowerCase()}`" />{{
+          profileLabel(route.profile)
+        }}
       </span>
     </div>
   </div>
