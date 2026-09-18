@@ -3,11 +3,11 @@
 ## 当前阶段
 
 - 当前版本：v1.0（技术版本 `1.0.0`）
-- 当前 Stage：v2.0 Stage 2 用户端路线助手提示词工程与受控 Tool Calling
-- 状态：功能、全量自动测试和真实 DeepSeek 联调均完成，用户已验收并确认提交 main
+- 当前 Stage：v2.0 Stage 2 已完成；暂无进行中的功能 Stage
+- 状态：路线助手、受控 Tool Calling、途经点、多候选路线和设施删除均已实现并验收，功能提交已推送 `origin/main`；2026-09-02 已完成仓库冗余文档与事实清理
 - Git Tag：`v1.0`（用户已明确确认创建）
 
-## v2.0 Stage 2 变更（进行中）
+## v2.0 Stage 2 变更（已完成并验收）
 
 - 新增用户端路线助手系统提示词资源；不接入 RAG，不修改治理统计提示词。
 - 真实模型可自主选择受控白名单工具；后端固定认证用户、数据集、会话和调用 ID，并校验地点、行动方式、设施/障碍类型、偏好和调用次数。
@@ -25,7 +25,7 @@
 
 ## v2.0 Stage 1 变更（已完成）
 
-### 子任务 ① GeoJSON 备份一键恢复（已完成，待验收）
+### 子任务 ① GeoJSON 备份一键恢复（已完成并验收）
 
 - 新增管理员接口：备份列表、恢复预览、执行恢复；恢复使用导入前 JSONB 快照整体替换六类地图对象。
 - 业务数据保护：USER_REPORT 障碍永不删除；被评分/评论/建议/路线历史外键引用的设施、节点及其关联建筑保留并明确提示。
@@ -34,36 +34,34 @@
 - 测试：MapDataIntegrationTest 新增 3 条，后端 74 条 JUnit 全绿；前端 31 条 Vitest、typecheck/lint/format/build 全绿。
 - 附带修复：前端全量同步 Prettier 格式（仓库此前 51 个文件不符合自身格式配置，与本次功能无关）。
 
-### 子任务 ② 后端服务拆分（已完成，待验收）
+### 子任务 ② 后端服务拆分（已完成并验收）
 
 - `MapDataService`（1334 行）按领域拆为：快照查询、地图对象保存、GeoJSON 导出、GeoJSON 导入与备份恢复，原类保留为门面。
 - `BusinessService`（620 行）拆为：个人资料、设施互动、上报审核、用户数据、管理治理，原类保留为门面。
 - `AnalyticsService`（439 行）拆为：统计查询、建筑评分、CSV 导出，原类保留为门面。
 - Controller 调用与 DTO 不变；74 条 JUnit 全绿，Docker 重建后端 healthy，`{"status":"UP"}`。
 
-### 子任务 ③ 管理地图页面组件拆分（已完成，待验收）
+### 子任务 ③ 管理地图页面组件拆分（已完成并验收）
 
 - `AdminDashboardView.vue`（1130 → 942 行）拆分出 `GeoJsonImportDialog.vue`（导入对话框）与 `GeoJsonBackupDialog.vue`（备份恢复对话框）。
 - 页面视觉与交互不变；导出/导入/备份按钮与地图编辑功能经无头浏览器冒烟验证正常。
 
-### 子任务 ④ AdminAnalyticsView 分包优化（已完成，待验收）
+### 子任务 ④ AdminAnalyticsView 分包优化（已完成并验收）
 
 - 治理洞察页改为按需异步加载地图与图表组件，主包 651.66kB → 111.55kB（gzip 218.20 → 33.75kB）。
 - ECharts 与高德地图拆为独立分包，按需加载；typecheck/lint/test/build 全绿，页面渲染无 JS 错误。
 
 ### 工程加固（Node 22 对齐 + 数据库备份脚本）
 
-- 前端本地 Node 与 Docker 构建对齐到 22：新增 `frontend/.nvmrc`，便携版 Node 22.23.2 位于 `D:\node22`；Node 22 下 typecheck/lint/31 Vitest/format/build 全部通过。
+- 前端本地 Node 与 Docker 构建统一为 Node 22：`frontend/.nvmrc` 已声明主版本；Node 22.23.2 下 typecheck/lint/31 Vitest/format/build 全部通过。
 - 新增 `scripts/backup-db.ps1`：pg_dump 自定义格式备份到 `backups/`（已加入 .gitignore），默认保留 14 份；实测生成并校验备份可读。
-- 备份与恢复命令、定时任务示例已写入 `启动说明.md` 与 `docs/DEPLOYMENT.md`。
+- 备份、整库恢复和定时任务说明已统一写入 `docs/DEPLOYMENT.md`。
 - 技术栈零改动：pom.xml、package.json（内容）、docker-compose.yml 均未变更。
 
 ### 附带修复：管理员登录却显示用户界面
 
 - 根路径 `/` 原先固定重定向 `/user`，管理员打开站点根地址会落入用户界面；现改为按角色跳转（管理员 → `/admin`，用户 → `/user`）。
 - 会话在挂载前恢复，保证根路径重定向时角色已就绪；已用无头浏览器实测管理员/用户两种账号。
-
-## v1.0 交付范围
 
 ## v1.0 交付范围
 
@@ -110,7 +108,7 @@
 
 | 项目 | v1.0 结果 |
 |---|---|
-| 后端 | 71/71 JUnit 通过；Testcontainers 空库执行 Flyway V1–V9 |
+| 后端 | 当前 83/83 JUnit 通过；Testcontainers 空库执行 Flyway V1–V9 |
 | A* 性能 | 400 节点、100 次最终回归：P50 413µs、P95 1,003µs、最大 3,034µs |
 | 前端 | 31/31 Vitest；vue-tsc、ESLint、Prettier、Vite production build 通过 |
 | 浏览器 | Playwright Chromium Edge 7/7 通过，含 Formal GeoJSON 预检合并、折线拐点撤销与 375px 移动端 |
@@ -133,19 +131,9 @@
 - Demo 数据是固定生成数据，不代表真实校园实测或无障碍认证。
 - Playwright 仅覆盖 Microsoft Edge Chromium；未宣称 Firefox/WebKit 兼容。
 - 高德真实域名白名单与外部模型可用性需要在目标域名人工验证。
-- `AdminAnalyticsView` 分包 651.66kB（gzip 218.20kB），不阻塞 v1.0，后续可拆分。
 - Compose 是单机比赛基线，不含 TLS、自动备份、集中监控、高可用或灾难恢复。
 - Mockito/Byte Buddy 在 Java 21 有未来 JDK 动态 Agent 提示，当前测试不受影响。
 
 ## 下一步
 
-Formal GeoJSON 安全协作已完成验收并提交。下一步由用户决定是否推送远程或创建新的 v2.0 Stage；整项目接手说明见 [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md)。
-
-## Stage 11：用户端提示词、受控 Tool Calling 与途经点路线（已完成并验收）
-
-- 用户端路线助手启用 classpath 系统提示词和 LangChain4j 受控白名单 Tool Calling；治理统计提示词与 RAG 均未改动。
-- `calculateAccessibleRoutes` 支持最多 3 个有序途经点。模型一次提交地点名称，后端校验歧义和路网连接，按相邻地点复用现有 A*，再合并完整 GeoJSON 折线与距离、时间、风险、坡度、楼梯、设施和算法指标。
-- 任一分段不可达时不伪造完整路线；模型不生成坐标、不替代 A* 和业务数据库事实。
-- 智能助手收到路线后只在地图显示当前选择的一条有效路线，并自动缩放到完整路线；后续风险追问保留上一条路线，不再因发送新消息提前清空。
-- 真实 DeepSeek 验收“西苑5栋 → 龙山体育场 → 北苑2号楼A座”：路线 Tool 参数包含 `waypointPlaces=[龙山体育场]`，一次调用拆为 2 段，合并结果 1034.46 米/约 15 分钟，地图显示完整折线。
-- 用户已完成页面验收并确认提交到本地 main；远程推送仍需单独授权。
+v2.0 Stage 1、Stage 2 均已完成验收并推送远程。后续新功能需新建 Stage；整项目接手说明见 [PROJECT_HANDOFF.md](PROJECT_HANDOFF.md)。

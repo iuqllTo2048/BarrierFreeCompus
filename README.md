@@ -39,7 +39,7 @@ backend/                   Spring Boot、A*、业务、智能体与 Flyway
 frontend/                  Vue 3 用户端、管理端、地图和 ECharts
 docs/                      设计、接口、数据、部署、测试和交付文档
 infra/                     基础设施预留目录
-scripts/                   E2E 与敏感信息扫描脚本
+scripts/                   数据库备份、隔离 E2E 与敏感信息扫描脚本
 prompts/stages/            项目分阶段需求留档（不是实现证据）
 .agents/skills/            项目级 UI 与复盘 Skill
 docker-compose.yml         本地正式演示编排

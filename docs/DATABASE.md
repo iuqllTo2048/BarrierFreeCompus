@@ -16,10 +16,10 @@
 | 空间 | `building`、`building_entrance` | 建筑 Polygon 与入口 Point |
 | 路网 | `route_node`、`route_edge` | A* 顶点与 LineString 边、方向和通行属性 |
 | 设施/障碍 | `accessible_facility`、`barrier_report` | 设施 Point、审核状态、有效期与 Geometry |
-| 用户闭环 | `user_accessibility_profile`、`facility_rating`、`facility_comment`、`facility_suggestion` | 出行偏好、评分、评论和建议 |
+| 用户闭环 | `user_profile`、`facility_rating`、`facility_comment`、`facility_suggestion` | 出行偏好、评分、评论和建议 |
 | 路线 | `route_history`、`route_favorite` | 结构化请求/结果 JSONB、用户收藏 |
 | 配置 | `system_setting` | 障碍匹配和调度等白名单运行设置 |
-| 智能体 | `ai_conversation`、`ai_message`、`ai_invocation_log`、`ai_tool_log`、`ai_action_draft` | 可见对话、脱敏调用/Tool 日志和两小时草稿 |
+| 智能体 | `ai_conversation`、`ai_message`、`ai_invocation_log`、`ai_tool_call_log`、`ai_action_draft` | 可见对话、脱敏调用/Tool 日志和两小时草稿 |
 | 导入安全 | `geojson_import_backup` | Formal 合并前的目标快照、文件/目标指纹、冲突策略与操作者 |
 
 所有核心地图/业务对象都保存 `dataset_id`。Demo 与 Formal 通过 `dataset.is_demo` 与数据集外键隔离；一键重置只允许 Demo。旧 GeoJSON v1 导入仍只允许 Demo；Formal 仅通过 v2 预检与安全合并接口写入。
@@ -64,4 +64,4 @@
 - 应用只新增或处理同类型同 `externalId` 对象，不因文件缺失而删除本地记录。
 - 冲突策略为 `KEEP_TARGET` 或 `OVERWRITE`；默认保留目标数据。
 - 应用前重新计算文件与目标指纹，目标变化时拒绝写入；备份、六类对象写入与审计在单事务内完成。
-- `geojson_import_backup` 是导入前安全快照，目前不提供界面一键恢复；生产级恢复仍应以数据库备份为准。
+- `geojson_import_backup` 是导入前安全快照。管理端提供备份列表、恢复预览和一键恢复：恢复前校验当前数据指纹，并用快照替换六类地图对象；`USER_REPORT` 障碍及受业务外键引用的对象会被保留并提示。该能力只处理地图对象，生产级整库恢复仍应使用 PostgreSQL 逻辑备份或卷快照。

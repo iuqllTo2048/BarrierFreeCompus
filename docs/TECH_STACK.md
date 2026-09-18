@@ -59,7 +59,7 @@
 | 名称 / 版本 | 作用 | 项目位置 | 选择原因 |
 |---|---|---|---|
 | Maven 3.9（容器） | 后端依赖与打包 | `backend/Dockerfile` | 固定 Java 21 构建环境并复用 Maven 缓存 |
-| Node 22 Alpine（容器） | 前端 `npm ci` 与构建 | `frontend/Dockerfile` | 发布构建固定 LTS，不受本机 Node 26 非 LTS 影响 |
+| Node 22 Alpine（容器） | 前端 `npm ci` 与构建 | `frontend/Dockerfile` | 发布构建固定 LTS，并与 `frontend/.nvmrc` 声明的本地开发主版本一致 |
 | Eclipse Temurin 21 JRE | 后端运行镜像 | `backend/Dockerfile` | 只带运行时，保持 Java LTS 与较小镜像 |
 | Nginx 1.27 Alpine | 静态资源、API/SSE 与高德代理 | `frontend/Dockerfile`、`default.conf.template` | 单一入口、SPA fallback 和密钥运行时代理 |
 | Docker Compose | db/backend/frontend 编排 | `docker-compose.yml` | 比赛本地一键启动，健康依赖和持久卷清晰 |
@@ -77,4 +77,4 @@
 
 v1.0 不使用 React、JPA、MySQL、MongoDB、微服务、Kubernetes、Redis、GraphHopper、openrouteservice、OSS、本地大模型、Tailwind 或 shadcn/ui。它们不会出现在发布架构图中。
 
-本机开发环境曾使用 Java 21.0.9、Maven 3.9.12、Node 26.3.0、npm 11.16.0、Docker 29.1.5 和 Compose 5.0.1；这些是开发机事实，不替代容器发布版本。Node 26 非 LTS 风险通过 Docker 固定 Node 22 规避。
+当前已验证的前端本地工具链为 Node 22.23.2、npm 10.9.8；仓库通过 `frontend/.nvmrc` 声明 Node 22，Docker 同样固定 Node 22 Alpine。Java、Maven、Docker Desktop 和 Compose 的宿主机补丁版本可因开发机器不同而变化，发布事实以 `pom.xml`、lockfile、Dockerfile 和 Compose 为准。

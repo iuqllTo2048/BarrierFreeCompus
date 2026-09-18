@@ -1,6 +1,6 @@
 # PROJECT_RECAP.md — BarrierFreeCampus 从零到答辩复盘
 
-> 复盘基线：v1.0 当前真实代码、Flyway V1–V7、前后端测试与 Docker 编排。`prompts/stages` 只作为需求留档，不作为“已经实现”的证据。
+> 复盘基线：v1.0 发布后完成 v2.0 Stage 1–2 的当前真实代码、Flyway V1–V9、前后端测试与 Docker 编排。`prompts/stages` 只作为需求留档，不作为“已经实现”的证据。
 
 ## 1. 一句话讲清项目
 
@@ -9,11 +9,11 @@ BarrierFreeCampus（无碍智行）不是“在高德地图上画几条线”，
 ## 2. 当前真实能力
 
 - 登录与权限：短期 Access JWT + 可轮换/撤销的 HttpOnly Refresh Cookie，USER/ADMIN 路由和接口双重保护；禁用用户立即失效。
-- 地图数据：建筑、入口、节点、道路、设施、障碍全部持久化到 PostgreSQL/PostGIS，管理端可编辑、自定义点位和道路属性、导入/导出 Demo GeoJSON。
-- 无障碍路线：五种行动方式、昼夜、避楼梯和权重偏好；输出最短、无障碍优先、综合路线，等价路径自动合并。
+- 地图数据：建筑、入口、节点、道路、设施、障碍全部持久化到 PostgreSQL/PostGIS，管理端可编辑、自定义点位和道路属性，并支持 Formal GeoJSON 预检合并及导入备份恢复。
+- 无障碍路线：五种行动方式、昼夜、避楼梯和权重偏好；A* 结合 Yen Top-K 输出 1–3 条真实无环候选，等价路径自动合并。
 - 用户闭环：设施评分/评论/建议、障碍上报、历史、收藏和个人偏好。
 - 管理闭环：障碍审核、可信度、用户启停、地图软停用、系统设置、审计、Demo 安全重置。
-- 智能助手：自然语言调用地点搜索、真实 A*、设施/障碍查询、路线比较和障碍草稿；外部 AI 可关闭、可替换、可降级。
+- 智能助手：模型在后端可信上下文内受控调用地点搜索、真实 A*、设施/障碍查询和障碍草稿；支持最多 3 个有序途经点，外部 AI 可关闭、可替换、可降级。
 - 治理洞察：建筑评分、设施分布、障碍空间/趋势、路线风险、可信度、CSV 与规则/模型摘要。
 - 发布质量：后端 JUnit/Testcontainers、前端 Vitest、Playwright E2E、类型/格式/构建、密钥扫描和隔离 Compose。
 
@@ -25,11 +25,11 @@ BarrierFreeCampus（无碍智行）不是“在高德地图上画几条线”，
 backend/src/main/java/cn/barrierfreecampus/
   auth/          登录、JWT、Refresh Token 与 Cookie
   security/      Spring Security 过滤器和权限规则
-  mapdata/       数据集、空间快照、地图 CRUD、GeoJSON
-  routing/       RouteGraph、AStarRouter、RouteCostPolicy、路线 API
-  business/      资料、互动、上报审核、历史收藏、Demo 重置
-  agent/         对话、SSE、白名单 Tool、Gateway 与脱敏日志
-  analytics/     统计 SQL、建筑评分、CSV 与治理摘要
+  mapdata/       数据集、空间快照、地图 CRUD、GeoJSON 与备份恢复
+  routing/       RouteGraph、A*、Yen Top-K、途经点编排、成本策略与路线 API
+  business/      资料、互动、上报审核、历史收藏、Demo 重置（门面 + 领域服务）
+  agent/         对话、SSE、受控白名单 Tool、Gateway 与脱敏日志
+  analytics/     统计 SQL、建筑评分、CSV 与治理摘要（门面 + 领域服务）
   common/        统一响应和异常处理
 
 frontend/src/
@@ -40,9 +40,9 @@ frontend/src/
   router/        懒加载路由与角色守卫
   types/         前后端契约类型
 
-backend/src/main/resources/db/migration/   V1–V7 schema 与固定 Demo
+backend/src/main/resources/db/migration/   V1–V9 schema、固定 Demo、Formal 数据集与导入备份
 frontend/e2e/                              发布候选浏览器流程
-scripts/                                   E2E 编排与 Secret 扫描
+scripts/                                   数据库备份、E2E 编排与 Secret 扫描
 docs/                                      设计、接口、数据、部署和交付事实
 ```
 
@@ -59,7 +59,7 @@ UserHomeView
   → RoutingService
   → RoutingRepository 从 PostGIS 读取节点、边、设施、生效障碍
   → RouteGraph 构图
-  → AStarRouter × SHORTEST / ACCESSIBLE / BALANCED
+  → YenTopKRouter → AStarRouter × SHORTEST / ACCESSIBLE / BALANCED
   → RouteCostPolicy 计算成本和硬约束
   → BusinessService.recordHistory
   → GeoJSON + 风险/成本/解释
@@ -88,11 +88,11 @@ UserServicesView 上报坐标/类型/描述
 ```text
 UserAssistantView Fetch SSE
   → AgentController / AgentService
-  → AgentSafetyPolicy
-  → AgentTools 白名单
+  → AgentSafetyPolicy + 系统提示词
+  → LangChain4j 受控调用 ControlledAgentTools 白名单
        searchCampusPlace → 数据库
-       calculateAccessibleRoutes → RoutingService/A*
-       compareRoutes → 确定性规则
+       calculateAccessibleRoutes → 地点校验/RouteItineraryService/RoutingService/A*
+       searchNearestAccessibleFacilities → PostGIS 空间距离
        createBarrierReportDraft → ai_action_draft
   → AiGateway（Mock 或 LangChain4j）只负责解释
   → SSE delta/route_result/comparison/draft
@@ -119,11 +119,11 @@ UserAssistantView Fetch SSE
 - SRID 0 不等于“没有考虑坐标系”，更不能为了工具方便伪装成 4326/WGS84。
 - `dataset.is_demo`、`data_source`、`confidence_level` 同时表达隔离、来源和可信度。Demo 来源固定为 `DEMO_GENERATED` 且不能 HIGH。
 - Formal 保护在服务端：重置先锁定数据集并校验 `is_demo=true`，不是只靠前端隐藏按钮。
-- Flyway V1–V7 是数据库事实历史。已经执行的 migration 不能回写；下一次结构变化必须加 V8。
+- Flyway V1–V9 是数据库事实历史。已经执行的 migration 不能回写；下一次结构变化必须新增 V10 或更高版本。
 
 ## 7. 前端设计不是“套模板”
 
-“静谧导览”把地图放在用户端首位：桌面左侧设置、中央地图、右侧结果；移动端通过按钮控制底部面板。三路线有名称和不同线型，风险同时使用文字/图标/颜色。管理端把地图作为主画布，检查器按需展开；治理图表与地图对象联动。
+“静谧导览”把地图放在用户端首位：桌面左侧设置、中央地图、右侧结果；移动端通过按钮控制底部面板。用户端默认隐藏完整校园路网，规划后只绘制当前选中的候选路线，点击路线卡切换。风险同时使用文字、图标、颜色或线型。管理端把地图作为主画布，检查器按需展开；治理图表与地图对象联动。
 
 Element Plus 只提供基础交互，颜色、间距、圆角、深色、高德样式、Marker 和 ECharts 均按项目 Token 二次设计。没有引入 Tailwind/shadcn，也没有用装饰性特效掩盖数据不足。
 
@@ -152,9 +152,9 @@ Element Plus 只提供基础交互，颜色、间距、圆角、深色、高德�
 
 1. 先能画出三条请求链，理解 Controller/Service/Repository/View 各自职责。
 2. 读 `RouteCostPolicy` 和 `AStarRouter`，能解释硬约束、非负成本和启发函数。
-3. 读 V3、V4、V6，理解空间表、固定 Demo 与业务闭环。
+3. 读 V3、V4、V6、V7、V9，理解空间表、固定 Demo、业务闭环、智能体日志与导入备份。
 4. 读 `SecurityConfig`、JWT 过滤器和 AuthService，理解 Access/Refresh 与角色边界。
-5. 读 `AgentService`/`AgentTools`，区分模型解释与确定性业务工具。
+5. 读 `AgentService`、`ControlledAgentTools` 和运行时系统提示词，区分模型理解、受控工具与确定性业务事实。
 6. 读 Playwright 和集成测试，学会用证据判断“功能完成”。
 
 ## 10. 三分钟答辩话术
@@ -163,7 +163,7 @@ Element Plus 只提供基础交互，颜色、间距、圆角、深色、高德�
 
 用户可以上报临时障碍，但首次上报不会直接改路线；管理员审核通过后才生效，下一次 A* 会实时读取并绕行。管理端还能维护点和道路、查看建筑无障碍评分、障碍趋势、路线风险与数据可信度。智能助手只是自然语言入口，它只能调用地点搜索、A*、设施/障碍查询、路线比较和草稿这些白名单工具；模型限流时手工路线照常工作。
 
-我们的 Demo 用固定种子复现楼梯绕行、坡度冲突、动态封路、未知数据和设施偏好，Demo 重置在后端校验 is_demo，Formal 数据不会受影响。发布通过了 65 个后端测试、29 个前端单元测试、6 个浏览器 E2E、Secret 扫描和隔离 Docker 验证。v1.0 是可演示的单机交付基线；真实上线还需要实地数据采集、域名与密钥配置、备份监控和高可用。”
+我们的 Demo 用固定种子复现楼梯绕行、坡度冲突、动态封路、未知数据和设施偏好，Demo 重置在后端校验 is_demo，Formal 数据不会受影响。当前回归通过了 83 个后端测试、31 个前端单元测试、7 个浏览器 E2E、Secret 扫描和隔离 Docker 验证。v1.0 是可演示的单机交付基线；真实上线还需要实地数据采集、域名与密钥配置、备份监控和高可用。”
 
 ## 11. v1.0 已知限制与下一步
 
@@ -171,5 +171,5 @@ Element Plus 只提供基础交互，颜色、间距、圆角、深色、高德�
 - 只验证 Chromium Edge；Firefox/WebKit 与真实移动设备需要按部署目标补测。
 - 高德真实域名白名单、外部模型限流和 Provider 合规需要部署现场验证。
 - Compose 是单机基线，没有 TLS、自动备份、限流、集中日志或高可用。
-- 治理洞察页面分包约 652kB（gzip 约 218kB），后续可继续按图表模块拆分。
+- 治理洞察已将地图与 ECharts 改为按需加载；ECharts 独立分包仍可能触发构建体积提示。
 - 下一版本最有价值的工作不是堆新框架，而是接入真实校园采集、建立核验流程、做可用性测试和生产运维加固。

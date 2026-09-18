@@ -18,7 +18,7 @@ docker compose ps
 
 `JWT_SECRET` 至少 32 字节；本地 HTTP 保持 `SECURE_COOKIE=false`。AI 可选：保持 `AI_ENABLED=false` 时无需 Provider Key，应用使用确定性 Mock。
 
-Compose 启动顺序为 PostgreSQL 健康 → Spring Boot 健康 → Nginx。全新数据库由 Flyway 自动执行 V1–V7，并安全初始化固定 Demo；已有 `postgres-data` 卷不会重新创建 schema 或覆盖用户数据。
+Compose 启动顺序为 PostgreSQL 健康 → Spring Boot 健康 → Nginx。全新数据库由 Flyway 自动执行 V1–V9，创建固定 Demo、正式空白数据集和 GeoJSON 导入备份表；已有 `postgres-data` 卷只执行尚未应用的新迁移，不会重建 schema 或覆盖用户数据。
 
 ## 3. 地址与端口
 
@@ -68,7 +68,22 @@ docker compose down
 
 管理员需要恢复演示状态时，应在治理工作台点击“安全重置 Demo”并完成二次确认。后端只接受 `is_demo=true` 的数据集，只清理当前 Demo 业务数据并恢复种子对象；Formal 会被拒绝，审计日志保留。该操作与删除整个数据库卷不同。
 
-数据库逻辑备份使用 `scripts/backup-db.ps1`（pg_dump 自定义格式，输出到 `backups/`，自动清理旧备份），恢复命令见 `启动说明.md`；正式备份还应使用 PostgreSQL 备份方案或部署平台卷快照。GeoJSON 文件仅用于地图对象协作，不作为完整数据库备份。
+数据库逻辑备份使用 `scripts/backup-db.ps1`（pg_dump 自定义格式，输出到 `backups/`，默认保留最近 14 份）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/backup-db.ps1
+# 可选：保留最近 30 份
+powershell -ExecutionPolicy Bypass -File scripts/backup-db.ps1 -Keep 30
+```
+
+整库恢复会覆盖当前数据库。先额外备份并停止业务写入，再将指定 dump 复制进数据库容器并执行恢复：
+
+```powershell
+docker compose cp .\backups\barrierfreecampus-YYYYMMDD-HHMMSS.dump db:/tmp/restore.dump
+docker compose exec db pg_restore -U barrierfree -d barrierfreecampus --clean --if-exists /tmp/restore.dump
+```
+
+定时备份属于部署机器配置，不随 Git 仓库同步。Windows 可使用任务计划程序定时调用同一脚本；新机器必须重新创建任务并核对工作目录、Docker 状态和备份保留策略。正式部署还应使用平台备份或卷快照，并定期演练恢复。GeoJSON 文件只用于地图对象协作，不是完整数据库备份。
 
 ## 6. 健康检查与排障
 
@@ -90,7 +105,7 @@ Invoke-WebRequest -UseBasicParsing http://localhost:8080/
 
 后端可在 `backend/` 使用 `mvn spring-boot:run`，通过 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 和 `JWT_SECRET` 连接 PostgreSQL。前端在 `frontend/` 使用 `npm run dev`；Vite 从仓库根 `.env` 读取高德配置，并把 `/api` 与 `/_AMapService` 代理到正确目标。
 
-前端本地开发建议使用 Node 22（与 Docker 构建一致）：仓库已提供 `frontend/.nvmrc`；无 nvm 时可直接使用便携版 `D:\node22\node-v22.23.2-win-x64`，或自行安装 Node 22 LTS。
+前端本地开发统一使用 Node 22（与 Docker 构建一致）：仓库已提供 `frontend/.nvmrc`。可使用 nvm 切换或自行安装 Node 22 LTS，不依赖某台开发机的固定安装路径。
 
 ## 8. 隔离 E2E
 

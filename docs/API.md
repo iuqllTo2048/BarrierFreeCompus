@@ -25,7 +25,7 @@
 | GET | `/api/map/datasets/{datasetId}/snapshot` | USER/ADMIN | 地图快照；可用 `bbox=minLng,minLat,maxLng,maxLat` 空间过滤 |
 | POST | `/api/routes/plan` | USER/ADMIN | 在自建路网上规划并记录历史 |
 
-路线请求包含 `datasetId`、`startNodeId`、`endNodeId`、`mobilityMode`、`travelPeriod` 和可选 `preferences`。行动方式为 `WHEELCHAIR / CRUTCH / TEMPORARY_INJURY / CART_LUGGAGE / WALKING`；时段为 `DAY / NIGHT`。结果详见 [ALGORITHM.md](ALGORITHM.md)。
+路线请求包含 `datasetId`、`startNodeId`、`endNodeId`、`mobilityMode`、`travelPeriod` 和可选 `preferences`。行动方式为 `WHEELCHAIR / CRUTCH / TEMPORARY_INJURY / CART_LUGGAGE / WALKING`；时段为 `DAY / NIGHT`。后端使用 Yen Top-K 为三个 Profile 寻找不同的真实无环候选，去重后返回 1–3 条路线；路网不足时不会复制路线凑数。结果详见 [ALGORITHM.md](ALGORITHM.md)。
 
 管理地图前缀 `/api/admin/map`：
 
@@ -40,9 +40,13 @@
 | POST | `/datasets/{datasetId}/entrances` | 新增入口 |
 | POST | `/datasets/{datasetId}/facilities` | 新增设施 |
 | POST | `/datasets/{datasetId}/barriers` | 新增障碍 |
+| DELETE | `/datasets/{datasetId}/{type}/{id}` | 删除地图对象；`type` 支持 nodes/edges/buildings/entrances/facilities/barriers，关联数据按服务端规则处理 |
 | GET / POST | `/datasets/{datasetId}/geojson` | 导出 GeoJSON v2；POST 保留旧 Demo 幂等导入兼容 |
 | POST | `/datasets/{datasetId}/geojson/preview` | 只读预检 Formal GeoJSON v2，返回统计、错误、冲突样例和双指纹 |
 | POST | `/datasets/{datasetId}/geojson/apply` | 使用预检双指纹与 `KEEP_TARGET/OVERWRITE` 策略安全合并 |
+| GET | `/datasets/{datasetId}/geojson/backups` | 列出该数据集的导入前快照 |
+| POST | `/datasets/{datasetId}/geojson/backups/{backupId}/preview` | 预览恢复将删除、恢复及因业务引用而保留的对象 |
+| POST | `/datasets/{datasetId}/geojson/backups/{backupId}/restore` | 校验当前指纹后恢复快照；变化冲突返回 409 |
 
 GeoJSON v2 导出六类可共享地图对象，不包含普通用户上报与用户业务数据。Formal 文件必须为 `FeatureCollection`、`schemaVersion=2`、匹配 `datasetCode` 且声明 `coordinateSystem=GCJ02`；道路端点和建筑引用必须可解析。应用为不删除本地缺失对象的单事务 MERGE，应用前保存 JSONB 快照并校验目标没有在预检后变化。地图写操作写入审计日志。
 
@@ -95,7 +99,7 @@ GeoJSON v2 导出六类可共享地图对象，不包含普通用户上报与用
 | PUT | `/api/agent/drafts/{id}/confirmed` | USER/ADMIN | 在正式上报成功后标记自己的草稿已确认 |
 | GET | `/api/admin/agent/invocations` | ADMIN | 脱敏调用和 Tool 日志 |
 
-SSE 事件与安全边界见 [AGENT.md](AGENT.md)。
+助手路线 Tool 可接收起点、终点和最多 3 个有序途经点。模型只提交地点名称；后端完成歧义校验、逐段 A* 和完整 GeoJSON 合并。SSE 事件与安全边界见 [AGENT.md](AGENT.md)。
 
 ## 7. 治理洞察
 

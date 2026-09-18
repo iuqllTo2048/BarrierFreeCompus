@@ -44,34 +44,27 @@
 ### 3.1 Stage 与 Git
 
 - Stage 0–9 和 v1.0 发布已完成。
-- v1.0 后续的“校园底图与折线路网编辑升级”已完成。
-- Formal GeoJSON v2 安全协作已完成并提交为 `1cf48cf`。
-- 本文创建前，本地 `main` 比 `origin/main` 超前 3 个提交，尚未推送。
-- 当前没有 v2.0 已实现代码；若规划 v2.0，必须先形成新 Stage 并由用户确认。
+- v2.0 Stage 1 工程补全已完成：GeoJSON 备份恢复、后端服务拆分、管理地图组件拆分、治理洞察按需加载和 Node 22 对齐。
+- v2.0 Stage 2 路线助手已完成：受控 Tool Calling、最多 3 个途经点、逐段 A* 合并、Yen Top-K 三候选和单路线地图切换。
+- 管理地图已补充统一对象删除接口，设施在当前界面可直接删除。
+- 上述功能已提交并推送 `origin/main`；接手时仍应重新检查 `git status` 和远程状态。
 
 ### 3.2 当前运行状态
 
-Docker Compose 当前运行：
+Docker Compose 的标准访问方式：
 
 | 服务 | 地址 | 状态 |
 |---|---|---|
-| 前端 Nginx | `http://localhost:8080` | 运行中 |
-| 后端直连 | `http://localhost:8081` | healthy |
-| 同源健康检查 | `http://localhost:8080/actuator/health` | `UP` |
-| PostgreSQL/PostGIS | Compose 内部 `db:5432` | healthy |
+| 前端 Nginx | `http://localhost:8080` | 启动后应可访问 |
+| 后端直连 | `http://localhost:8081` | `docker compose ps` 应显示 healthy |
+| 同源健康检查 | `http://localhost:8080/actuator/health` | 启动后应返回 `UP` |
+| PostgreSQL/PostGIS | Compose 内部 `db:5432` | `docker compose ps` 应显示 healthy |
 
-当前正式持久卷数据快照：
-
-| 数据集 | 启用 | 类型 | 节点 | 道路 | 设施 | 障碍 |
-|---|---:|---|---:|---:|---:|---:|
-| `SCHOOL_EXAMPLE_V1` | 是 | Formal | 2 | 0 | 0 | 0 |
-| `YUNLU_DEMO_V1` | 否 | Demo | 22 | 32 | 15 | 6 |
-
-这些数量是当前本机持久卷状态，不是 Flyway 初始种子声明。Formal 的两个节点属于用户已编辑数据，不能擅自清理。旧云麓 Demo 只停用并保留，管理员仍能查看。
+运行状态和持久卷对象数量属于机器现场状态，不能写死在交接文档中。接手时通过 `docker compose ps`、健康接口和管理端数据集快照核对；Formal 数据不得擅自清理，旧云麓 Demo 只停用并保留。
 
 ### 3.3 已验证结果
 
-- 后端：71/71 JUnit，通过真实 Testcontainers PostGIS 与 Flyway V1–V9。
+- 后端：83/83 JUnit，通过真实 Testcontainers PostGIS 与 Flyway V1–V9。
 - 前端：31/31 Vitest，TypeScript、ESLint、Prettier 和生产构建通过。
 - 浏览器：7/7 Playwright Microsoft Edge Chromium 通过。
 - 隔离 E2E 使用 18080/18081 和 tmpfs PostGIS，结束后自动销毁。
@@ -158,13 +151,13 @@ docker compose ps
 - 用户障碍审核、实地核验、设施建议、用户启停、审计与系统设置。
 - 治理统计、建筑评分、地图/图表联动、CSV 与规则/AI 摘要。
 - GeoJSON v2 导出、Formal 只读预检、冲突策略和安全合并。
+- 导入前快照列表、恢复影响预览和一键恢复；业务引用与用户上报受保护。
 
 ### 5.3 明确未实现
 
 - GPS 实时导航、偏航提醒、室内导航和跨楼层路径。
 - 图片上传、OSS、多模态识别、RAG/pgvector。
 - 实时天气、微信小程序、Redis、消息队列、微服务、高可用部署。
-- Formal GeoJSON 备份的一键恢复界面。
 - 多人实时共同编辑；当前使用文件式 GeoJSON 交换。
 
 ## 6. 总体架构与请求链
@@ -196,7 +189,7 @@ UserHomeView.vue
 → RoutingService.plan
 → RoutingRepository.loadGraph
 → PostgreSQL/PostGIS 读取节点、边、沿途设施和生效障碍
-→ AStarRouter.search + RouteCostPolicy.evaluate
+→ YenTopKRouter → AStarRouter.search + RouteCostPolicy.evaluate
 → RoutingDtos.RoutePlanResponse
 → 前端路线卡片 + CampusMap LineString
 ```
@@ -209,9 +202,9 @@ UserHomeView.vue
 UserAssistantView.vue
 → agent-api.ts Fetch SSE
 → AgentController / AgentService
-→ AgentSafetyPolicy
-→ AgentTools 白名单工具
-→ RoutingService / 只读 SQL / 草稿仓库
+→ AgentSafetyPolicy + classpath 系统提示词
+→ LangChain4j 受控调用 ControlledAgentTools 白名单工具
+→ 地点校验 / RouteItineraryService / RoutingService / 草稿仓库
 → 已验证事实结果
 → LangChain4jAiGateway 仅做高层解释
 → SSE delta / tool_result / route_result / barrier_draft
@@ -357,11 +350,11 @@ backend/
   src/main/java/cn/barrierfreecampus/
     auth/          登录、JWT、Refresh Token
     security/      Spring Security 与 JWT Filter
-    mapdata/       数据集、地图 CRUD、GeoJSON v1/v2
-    routing/       图模型、成本策略、A*、路线接口
-    business/      用户服务、审核、历史、收藏、设置
-    agent/         SSE、白名单 Tool、LangChain4j、Mock
-    analytics/     统计、建筑评分、CSV、治理摘要
+    mapdata/       数据集、地图 CRUD、GeoJSON v1/v2、导入备份恢复
+    routing/       图模型、成本策略、A*、Yen Top-K、途经点编排与路线接口
+    business/      用户服务、审核、历史、收藏、设置（门面 + 领域服务）
+    agent/         SSE、受控白名单 Tool、LangChain4j、Mock
+    analytics/     统计、建筑评分、CSV、治理摘要（门面 + 领域服务）
     common/        统一响应与异常
   src/main/resources/db/migration/  Flyway V1–V9
   src/test/                         JUnit/Testcontainers
@@ -375,7 +368,7 @@ frontend/
   e2e/             Playwright 发布候选流程
 
 docs/              规格、设计、API、数据库、部署、测试、说明书
-scripts/           隔离 E2E 与安全扫描
+scripts/           数据库备份、隔离 E2E 与安全扫描
 docker-compose.yml 正式本地演示编排
 ```
 
@@ -385,11 +378,11 @@ docker-compose.yml 正式本地演示编排
 |---|---|
 | 改路线成本 | `RouteCostPolicy.java`、相关测试 |
 | 改 A* | `AStarRouter.java`、`AStarRouterTest.java`、性能测试 |
-| 改地图对象/GeoJSON | `MapDataService.java`、`AdminMapController.java`、`map-api.ts` |
+| 改地图对象/GeoJSON | `MapDataService.java`、`MapObjectService.java`、`GeoJsonImportService.java`、`AdminMapController.java`、`map-api.ts` |
 | 改折线编辑 | `AdminDashboardView.vue`、`CampusMap.vue`、`map-geometry.ts` |
-| 改用户上报/审核 | `BusinessService.java`、两个 Business Controller |
-| 改 AI | `AgentService.java`、`AgentTools.java`、`LangChain4jAiGateway.java` |
-| 改治理统计 | `AnalyticsService.java`、`AdminAnalyticsView.vue`、`analytics-charts.ts` |
+| 改用户上报/审核 | `BusinessService.java`、`BarrierGovernanceService.java`、两个 Business Controller |
+| 改 AI | `AgentService.java`、`ControlledAgentTools.java`、`AgentTools.java`、`LangChain4jAiGateway.java`、运行时提示词 |
+| 改治理统计 | `AnalyticsService.java`、`AnalyticsQueryService.java`、`AdminAnalyticsView.vue`、`analytics-charts.ts` |
 | 改权限 | `SecurityConfig.java`、`JwtAuthenticationFilter.java`、router |
 
 ## 14. 开发、测试与发布命令
@@ -442,26 +435,17 @@ git diff --check
 4. 推送前确认 `.env`、Key、证书、数据库文件和构建产物没有进入暂存区。
 5. 代码通过 Git 同步；地图业务数据通过 GeoJSON v2 或数据库备份同步，两者不要混淆。
 
-当前尚未推送的三个提交：
-
-```text
-72b2ac7 feat: 升级校园底图与折线路网编辑
-bc880fc docs: 添加 Codex 地图协作开发交接说明
-1cf48cf feat: 实现正式地图 GeoJSON 安全协作
-```
-
-其中 `bc880fc` 创建的临时交接文件已在 `1cf48cf` 删除，历史保留是正常 Git 行为。本文是面向整项目的新交接文档。
+不要依赖本文记录的提交同步状态。每次协作前使用 `git fetch`、`git status --short --branch` 和 `git log --oneline --decorate -5` 核对当前分支、远程差异与工作区改动。
 
 ## 16. 已知限制与接手风险
 
-- Formal 当前只有两个节点，尚未形成可规划路网；用户端空路线属于数据不足，不是 A* 故障。
+- Formal 是否形成可规划路网取决于当前持久卷数据；用户端无路线时先核对端点是否接入连通路网。
 - Demo 数据是固定生成数据，不代表真实实测或无障碍认证。
 - 管理端建筑创建目前使用点选位置生成简化 Polygon，不是专业测绘工具。
 - GeoJSON 是离线文件协作，不提供实时多人锁或自动同步。
-- V9 保存导入前快照，但没有一键恢复 UI；恢复需要后续经过设计和权限确认。
 - Playwright 只验证 Microsoft Edge Chromium，没有宣称 Firefox/WebKit 完整兼容。
-- `AdminAnalyticsView` 生产分包约 651.66kB，当前可用，后续可做按需拆分。
-- 本机 Node 26 非常规 LTS，但 Docker 发布构建固定 Node 22；不要因此随意切换全局环境。
+- 治理洞察已按需加载地图和 ECharts；ECharts 独立分包仍可能触发 Vite 大包提示，但不进入页面主包。
+- 本地与 Docker 前端工具链统一使用 Node 22；以 `frontend/.nvmrc` 为准。
 - 单机 Compose 不含 TLS、自动备份、监控、高可用和灾难恢复，不能直接等同生产部署。
 - Java 21 测试存在 Mockito/Byte Buddy 对未来 JDK 动态 Agent 的提示，当前不影响测试。
 
