@@ -39,12 +39,7 @@ async function signOut(): Promise<void> {
   <div class="app-shell">
     <header class="topbar">
       <RouterLink class="wordmark" :to="auth.role === 'ADMIN' ? '/admin' : '/user'">
-        <img
-          class="wordmark-symbol"
-          src="/images/barrierfreecampus-logo-mark.png"
-          alt=""
-          aria-hidden="true"
-        />
+        <span class="wordmark-symbol"><AppIcon name="route" :size="18" /></span>
         <span>无碍智行</span>
       </RouterLink>
       <nav class="desktop-navigation" aria-label="主导航">

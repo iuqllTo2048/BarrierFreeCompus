@@ -40,10 +40,7 @@ async function submit(): Promise<void> {
     </section>
 
     <section class="login-panel" aria-labelledby="login-title">
-      <div class="login-brand">
-        <img src="/images/barrierfreecampus-logo-mark.png" alt="" aria-hidden="true" />
-        <p class="brand">无碍智行</p>
-      </div>
+      <p class="brand">无碍智行</p>
       <h2 id="login-title">登录校园导览</h2>
       <p class="muted">登录后根据身份进入校园路线服务或数据治理工作台。</p>
       <el-form label-position="top" @submit.prevent="submit">
