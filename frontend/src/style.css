@@ -454,7 +454,17 @@ h2 {
   gap: 64px;
   align-items: center;
   padding: clamp(24px, 6vw, 88px);
-  background: radial-gradient(circle at 18% 20%, #dceee8 0, transparent 34%), #f3f7f5;
+  background-color: var(--color-bg);
+  background-image:
+    linear-gradient(
+      90deg,
+      rgb(246 248 247 / 84%) 0%,
+      rgb(246 248 247 / 52%) 48%,
+      rgb(246 248 247 / 96%) 100%
+    ),
+    url('/images/login-campus-background.png');
+  background-position: center;
+  background-size: cover;
 }
 .login-context {
   max-width: 680px;
@@ -477,8 +487,20 @@ h2 {
   padding: 32px;
   box-shadow: 0 16px 40px rgb(24 51 45 / 10%);
 }
-.brand {
+.login-brand {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
   margin-bottom: 24px;
+}
+.login-brand img,
+.wordmark-symbol {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.brand {
+  margin: 0;
   color: var(--primary);
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -555,9 +577,14 @@ h2 {
   place-items: center;
   width: 32px;
   height: 32px;
+  border-radius: 8px;
+}
+.wordmark-symbol {
+  object-fit: contain;
+}
+.map-feature-popup__icon {
   color: #fff;
   background: var(--color-primary);
-  border-radius: 8px;
 }
 .app-icon {
   display: block;
@@ -888,6 +915,25 @@ h2 {
 .section-heading h1 {
   margin-bottom: 8px;
 }
+.service-workspace > .section-heading {
+  min-height: 176px;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 28px 32px;
+  background-color: var(--color-surface);
+  background-image:
+    linear-gradient(
+      90deg,
+      rgb(246 248 247 / 96%) 0%,
+      rgb(246 248 247 / 88%) 52%,
+      rgb(246 248 247 / 28%) 100%
+    ),
+    url('/images/user-services-campus-background.png');
+  background-position: center;
+  background-size: cover;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
 .service-tabs > .el-tabs__header {
   margin-bottom: 20px;
 }
@@ -1057,7 +1103,17 @@ h2 {
 .profile-panel {
   max-width: 620px;
   padding: 24px;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(
+      90deg,
+      rgb(246 248 247 / 98%) 0%,
+      rgb(246 248 247 / 94%) 58%,
+      rgb(246 248 247 / 54%) 100%
+    ),
+    url('/images/profile-campus-background.png');
+  background-position: center;
+  background-size: cover;
   border: 1px solid var(--border);
   border-radius: 12px;
 }
@@ -2091,10 +2147,19 @@ h2 {
 }
 
 @media (max-width: 800px) {
+  .service-workspace > .section-heading {
+    min-height: 156px;
+    padding: 24px;
+    background-position: 62% center;
+  }
+  .profile-panel {
+    background-position: 72% center;
+  }
   .login-page {
     grid-template-columns: 1fr;
     gap: 32px;
     padding: 24px 16px;
+    background-position: 35% center;
   }
   .login-context {
     padding-top: 24px;
@@ -2313,7 +2378,37 @@ h2 {
     --shadow-map: 0 8px 24px rgb(0 0 0 / 32%);
   }
   .login-page {
-    background: radial-gradient(circle at 18% 20%, #173d36 0, transparent 34%), #101918;
+    background-color: var(--color-bg);
+    background-image:
+      linear-gradient(
+        90deg,
+        rgb(16 25 24 / 86%) 0%,
+        rgb(16 25 24 / 62%) 48%,
+        rgb(16 25 24 / 95%) 100%
+      ),
+      url('/images/login-campus-background.png');
+  }
+  .service-workspace > .section-heading {
+    background-color: var(--color-surface);
+    background-image:
+      linear-gradient(
+        90deg,
+        rgb(23 35 33 / 97%) 0%,
+        rgb(23 35 33 / 90%) 52%,
+        rgb(23 35 33 / 46%) 100%
+      ),
+      url('/images/user-services-campus-background.png');
+  }
+  .profile-panel {
+    background-color: var(--color-surface);
+    background-image:
+      linear-gradient(
+        90deg,
+        rgb(23 35 33 / 98%) 0%,
+        rgb(23 35 33 / 94%) 58%,
+        rgb(23 35 33 / 62%) 100%
+      ),
+      url('/images/profile-campus-background.png');
   }
   .lead,
   .route-legend,

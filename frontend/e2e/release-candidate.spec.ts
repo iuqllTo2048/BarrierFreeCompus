@@ -8,6 +8,39 @@ async function login(page: Page, role: 'USER' | 'ADMIN' = 'USER'): Promise<void>
   await expect(page).toHaveURL(role === 'ADMIN' ? /\/admin$/ : /\/user$/);
 }
 
+test('登录页显示校园导览背景且表单仍可操作', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: '登录校园导览' })).toBeVisible();
+  await expect(page.locator('img[src="/images/barrierfreecampus-logo-mark.png"]')).toBeVisible();
+  const backgroundImage = await page
+    .locator('.login-page')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(backgroundImage).toContain('login-campus-background.png');
+  await expect(page.getByLabel('用户名')).toBeEditable();
+});
+
+test('登录后顶栏沿用无碍智行图形标识', async ({ page }) => {
+  await login(page);
+  await expect(page.locator('.wordmark img[src="/images/barrierfreecampus-logo-mark.png"]')).toBeVisible();
+});
+
+test('用户服务和个人中心使用低干扰校园背景', async ({ page }) => {
+  await login(page);
+  await page.getByRole('link', { name: '用户服务' }).click();
+  await expect(page.getByRole('heading', { name: '出行记录与校园共治' })).toBeVisible();
+  const serviceBackground = await page
+    .locator('.service-workspace > .section-heading')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(serviceBackground).toContain('user-services-campus-background.png');
+
+  await page.getByRole('tab', { name: '个人中心' }).click();
+  await expect(page.getByRole('heading', { name: '默认出行偏好' })).toBeVisible();
+  const profileBackground = await page
+    .locator('.profile-panel')
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
+  expect(profileBackground).toContain('profile-campus-background.png');
+});
+
 async function waitForBlankSchoolDataset(page: Page): Promise<void> {
   const routePage = page.getByLabel('规划校园通行路线');
   await expect(routePage).toContainText('学校示例校园数据集');
